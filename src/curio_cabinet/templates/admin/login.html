@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Sign in · {{ registry.collection.title }}{% endblock %}
+{% block main_class %}page page-narrow{% endblock %}
+{% block content %}
+<div class="auth-card">
+  {% if step == 'password' %}
+    <h1>Sign in</h1>
+    <form method="post" action="{{ url_for('admin.login', next=request.args.get('next')) }}">
+      <div class="form-field">
+        <label for="username">Username</label>
+        <input id="username" name="username" autocomplete="username" autofocus required>
+      </div>
+      <div class="form-field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+      </div>
+      {% if error %}<p class="field-error">{{ error }}</p>{% endif %}
+      <button class="btn btn-primary btn-block" type="submit">Sign in</button>
+    </form>
+  {% else %}
+    <h1>Two-factor code</h1>
+    <p class="muted">Enter the 6-digit code from your authenticator app.</p>
+    <form method="post" action="{{ url_for('admin.login_totp') }}">
+      <div class="form-field">
+        <label for="code" class="visually-hidden">Code</label>
+        <input id="code" name="code" inputmode="numeric" autocomplete="one-time-code"
+               pattern="[0-9]*" maxlength="6" class="totp-input" autofocus required>
+      </div>
+      {% if error %}<p class="field-error">{{ error }}</p>{% endif %}
+      <button class="btn btn-primary btn-block" type="submit">Verify</button>
+    </form>
+  {% endif %}
+</div>
+{% endblock %}

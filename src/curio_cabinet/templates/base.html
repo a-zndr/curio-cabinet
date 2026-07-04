@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en" data-theme="">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ registry.collection.title }}{% endblock %}</title>
+  {% block og %}{% endblock %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  {% if registry.collection.accent_hue is not none %}
+  <style>:root { --accent-hue: {{ registry.collection.accent_hue }}; }</style>
+  {% endif %}
+  <script>
+    // theme boot: before paint, no framework needed
+    (function () {
+      var saved = localStorage.getItem("cc-theme");
+      if (saved) document.documentElement.dataset.theme = saved;
+    })();
+  </script>
+  <script defer src="{{ url_for('static', filename='vendor/htmx.min.js') }}"></script>
+  <script defer src="{{ url_for('static', filename='vendor/alpine.min.js') }}"></script>
+  <script defer src="{{ url_for('static', filename='js/app.js') }}"></script>
+</head>
+<body {% if csrf_token %}hx-headers='{"X-CSRF-Token": "{{ csrf_token }}"}'{% endif %}>
+  <header class="site-header">
+    <a class="site-title" href="{{ url_for('public.index') }}">{{ registry.collection.title }}</a>
+    <nav class="site-nav">
+      {% block nav %}{% endblock %}
+      <button class="icon-btn" id="theme-toggle" type="button" aria-label="Toggle theme">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="3.5"/><path d="M8 1v1.5M8 13.5V15M15 8h-1.5M2.5 8H1M12.95 3.05l-1.06 1.06M4.11 11.89l-1.06 1.06M12.95 12.95l-1.06-1.06M4.11 4.11L3.05 3.05"/></svg>
+      </button>
+      {% if admin_user %}
+        <a href="{{ url_for('admin.dashboard') }}">Admin</a>
+      {% endif %}
+    </nav>
+  </header>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="flashes">
+        {% for category, message in messages %}
+          <div class="flash {{ 'flash-error' if category == 'error' else '' }}">{{ message }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <main class="{% block main_class %}page{% endblock %}">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    {% if not admin_user %}<a class="quiet" href="{{ url_for('admin.login') }}">Admin</a>{% endif %}
+  </footer>
+</body>
+</html>

@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% from "_fields.html" import field_input %}
+{% block title %}{{ 'Edit ' + item['id'] if item else 'New item' }} · {{ registry.collection.title }}{% endblock %}
+{% block nav %}
+  <a href="{{ url_for('admin.dashboard') }}">Admin</a>
+{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>{{ 'Edit ' ~ item['id'] if item else 'New item' }}</h1>
+  {% if item %}
+    <a class="btn" href="{{ url_for('public.item_detail', item_id=item['id']) }}">View</a>
+  {% endif %}
+</div>
+
+{% if errors %}
+<div class="flash flash-error">Fix the highlighted fields below.</div>
+{% endif %}
+
+<form method="post" class="item-form" data-autosave="{{ 'edit-' ~ item['id'] if item else 'new' }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+  {% for group in registry.groups %}
+  <fieldset class="form-group"
+    {% if group.when %}
+      data-when-field="f-{{ group.when.field }}"
+      data-when-values='{{ ([group.when.eq] if group.when.eq is not none else group.when.in_ | list) | tojson }}'
+    {% endif %}>
+    <legend>{{ group.label }}</legend>
+    <div class="form-grid">
+      {% for key in group.fields %}
+        {{ field_input(registry.by_key[key], raw, errors) }}
+      {% endfor %}
+    </div>
+  </fieldset>
+  {% endfor %}
+
+  <div class="form-actions">
+    <button class="btn btn-primary" type="submit">{{ 'Save' if item else 'Create' }}</button>
+    <a class="btn" href="{{ url_for('admin.dashboard') }}">Cancel</a>
+  </div>
+</form>
+
+{% if item %}
+<section class="form-group">
+  <h2>Images</h2>
+  {% if gallery %}
+  <ul class="admin-gallery">
+    {% for image in gallery %}
+    <li>
+      <img src="{{ url_for('public.image', content_hash=image['content_hash'], variant='thumb') }}"
+           width="120" alt="">
+      <div class="gallery-actions">
+        {% if loop.index0 > 0 %}
+        <form method="post" action="{{ url_for('admin.image_primary', image_id=image['id']) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="btn btn-sm" type="submit">Make primary</button>
+        </form>
+        <form method="post" action="{{ url_for('admin.image_move', image_id=image['id']) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="dir" value="up">
+          <button class="btn btn-sm" type="submit" aria-label="Move earlier">←</button>
+        </form>
+        {% else %}
+        <span class="chip">Primary</span>
+        {% endif %}
+        {% if not loop.last %}
+        <form method="post" action="{{ url_for('admin.image_move', image_id=image['id']) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="dir" value="down">
+          <button class="btn btn-sm" type="submit" aria-label="Move later">→</button>
+        </form>
+        {% endif %}
+        <form method="post" action="{{ url_for('admin.image_delete', image_id=image['id']) }}"
+              onsubmit="return confirm('Delete this image?')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="btn btn-sm btn-danger" type="submit">Delete</button>
+        </form>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('admin.item_images_upload', item_id=item['id']) }}"
+        enctype="multipart/form-data" class="upload-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="upload-zone">
+      <input type="file" name="images" accept="image/jpeg,image/png,image/webp" multiple>
+      <span>Add photos — tap to choose or use the camera</span>
+    </label>
+    <button class="btn" type="submit">Upload</button>
+  </form>
+</section>
+
+<section class="danger-zone">
+  <form method="post" action="{{ url_for('admin.item_delete', item_id=item['id']) }}"
+        onsubmit="return confirm('Delete {{ item['id'] }} and its images? This cannot be undone.')">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="btn btn-danger" type="submit">Delete this item</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

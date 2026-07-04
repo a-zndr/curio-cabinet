@@ -96,20 +96,69 @@ def create_app(instance_root: str | None = None) -> Flask:
             )
         return resp
 
+    _register_filters(app)
+
     @app.get("/healthz")
     def healthz():
         g.db.execute("SELECT 1")
         return {"ok": True}
 
+    from .views.admin import bp as admin_bp, current_session
     from .views.public import bp as public_bp
 
     app.register_blueprint(public_bp)
+    app.register_blueprint(admin_bp, url_prefix="/admin")
 
-    try:
-        from .views.admin import bp as admin_bp
-    except ImportError:
-        log.warning("admin views not available yet")
-    else:
-        app.register_blueprint(admin_bp, url_prefix="/admin")
+    @app.context_processor
+    def _template_globals():
+        session = current_session()
+        return {
+            "registry": g.registry,
+            "csrf_token": session["csrf_token"] if session else "",
+            "admin_user": session["username"] if session else None,
+        }
 
     return app
+
+
+def _register_filters(app: Flask) -> None:
+    import json
+    from urllib.parse import urlsplit
+
+    from .units import format_measure
+
+    @app.template_filter("parse_tags")
+    def parse_tags(value):
+        if not value:
+            return []
+        if isinstance(value, list):
+            return value
+        try:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, list) else [str(value)]
+        except (json.JSONDecodeError, TypeError):
+            return [part.strip() for part in str(value).split(",") if part.strip()]
+
+    @app.template_filter("domain_only")
+    def domain_only(url):
+        try:
+            host = urlsplit(url).netloc
+            return host.removeprefix("www.") or url
+        except ValueError:
+            return url
+
+    @app.template_filter("fmt_measure")
+    def fmt_measure(field, value, all_units=False):
+        unit = field.unit
+        if not unit or not unit.store or not unit.dimension:
+            suffix = f" {unit.label}" if unit and unit.label else ""
+            return f"{value:g}{suffix}"
+        shown = unit.display if all_units else unit.display[:1]
+        return " · ".join(
+            format_measure(
+                float(value), store=unit.store, display=d, dimension=unit.dimension
+            )
+            for d in shown
+        )
+
+

@@ -1,0 +1,88 @@
+{# Field rendering macros — the "config renders everywhere" contract.
+   A new field in collection.yaml flows through these with zero template edits. #}
+
+{% macro field_value(item, field, ctx='table') -%}
+  {%- set v = item[field.key] -%}
+  {%- if v is none or v == '' -%}
+    <span class="empty-dash">–</span>
+  {%- elif field.type.value == 'boolean' -%}
+    {{ 'Yes' if v else 'No' }}
+  {%- elif field.type.value == 'tags' -%}
+    {%- for tag in v | parse_tags -%}
+      <span class="chip chip-sm">{{ tag }}</span>
+    {%- endfor -%}
+  {%- elif field.type.value == 'url' -%}
+    <a href="{{ v }}" rel="noopener nofollow" target="_blank" class="ext-link">{{ v | domain_only }}</a>
+  {%- elif field.type.value in ('number', 'integer') and field.unit -%}
+    <span class="num">{{ field | fmt_measure(v, all_units=(ctx == 'detail')) }}</span>
+  {%- elif field.type.value in ('number', 'integer') -%}
+    <span class="num">{{ '%g' | format(v) }}</span>
+  {%- elif field.link and item[field.link] -%}
+    <a href="{{ item[field.link] }}" rel="noopener nofollow" target="_blank">{{ v }}</a>
+  {%- else -%}
+    {{ v }}
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro field_input(field, raw, errors) -%}
+  {%- set v = raw.get(field.key) -%}
+  {%- set v = '' if v is none else v -%}
+  <div class="form-field {% if errors.get(field.key) %}has-error{% endif %}">
+    <label for="f-{{ field.key }}">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
+
+    {%- if field.type.value == 'longtext' -%}
+      <textarea id="f-{{ field.key }}" name="{{ field.key }}" rows="3">{{ v }}</textarea>
+
+    {%- elif field.type.value == 'boolean' -%}
+      <select id="f-{{ field.key }}" name="{{ field.key }}">
+        <option value="" {% if v == '' %}selected{% endif %}>—</option>
+        <option value="true" {% if v in (1, '1', 'true', True) %}selected{% endif %}>Yes</option>
+        <option value="false" {% if v in (0, '0', 'false', False) %}selected{% endif %}>No</option>
+      </select>
+
+    {%- elif field.type.value == 'enum' -%}
+      {%- if field.strict -%}
+        <select id="f-{{ field.key }}" name="{{ field.key }}">
+          <option value=""></option>
+          {% for choice in field.values %}
+            <option value="{{ choice }}" {% if v == choice %}selected{% endif %}>{{ choice }}</option>
+          {% endfor %}
+        </select>
+      {%- else -%}
+        <input id="f-{{ field.key }}" name="{{ field.key }}" value="{{ v }}" list="dl-{{ field.key }}" autocomplete="off">
+        <datalist id="dl-{{ field.key }}">
+          {% for choice in field.values %}<option value="{{ choice }}">{% endfor %}
+        </datalist>
+      {%- endif -%}
+
+    {%- elif field.type.value == 'tags' -%}
+      <input id="f-{{ field.key }}" name="{{ field.key }}" value="{{ v | parse_tags | join(', ') }}"
+             placeholder="comma, separated">
+
+    {%- elif field.type.value in ('number', 'integer') and field.unit and field.unit.store -%}
+      <div class="input-unit">
+        <input id="f-{{ field.key }}" name="{{ field.key }}" value="{{ v if v != '' else '' }}"
+               inputmode="decimal" placeholder="e.g. 61 or 24 in">
+        <span class="unit-suffix">{{ field.unit.store }}</span>
+      </div>
+      <p class="hint">Accepts other units: “24 in”, “6.5 ft”…</p>
+
+    {%- elif field.type.value in ('number', 'integer') -%}
+      <div class="input-unit">
+        <input id="f-{{ field.key }}" name="{{ field.key }}" value="{{ v }}" inputmode="decimal">
+        {% if field.unit and field.unit.label %}<span class="unit-suffix">{{ field.unit.label }}</span>{% endif %}
+      </div>
+
+    {%- elif field.type.value == 'date' -%}
+      <input id="f-{{ field.key }}" name="{{ field.key }}" type="date" value="{{ v }}">
+
+    {%- elif field.type.value == 'url' -%}
+      <input id="f-{{ field.key }}" name="{{ field.key }}" type="url" value="{{ v }}" placeholder="https://…">
+
+    {%- else -%}
+      <input id="f-{{ field.key }}" name="{{ field.key }}" value="{{ v }}">
+    {%- endif -%}
+
+    {% if errors.get(field.key) %}<p class="field-error">{{ errors[field.key] }}</p>{% endif %}
+  </div>
+{%- endmacro %}

@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% from "_fields.html" import field_value %}
+{% block title %}{{ item[registry.collection.title_field] }} · {{ registry.collection.title }}{% endblock %}
+{% block content %}
+<article class="detail">
+  <div class="detail-gallery">
+    {% for image in gallery %}
+      <img src="{{ url_for('public.image', content_hash=image['content_hash'], variant='display') }}"
+           alt="{{ item[registry.collection.title_field] }}"
+           {% if not loop.first %}loading="lazy"{% endif %}>
+    {% else %}
+      <div class="no-image">No photos yet</div>
+    {% endfor %}
+  </div>
+
+  <div class="detail-specs">
+    <p class="mono muted">{{ item['id'] }}</p>
+    <h1>{{ item[registry.collection.title_field] }}</h1>
+    {% if admin_user %}
+      <a class="btn" href="{{ url_for('admin.item_edit', item_id=item['id']) }}">Edit</a>
+    {% endif %}
+
+    {% for group in registry.groups %}
+      {% if not group.when or group.when.matches(item) %}
+        {% set filled = [] %}
+        {% for key in group.fields %}
+          {% set field = registry.by_key[key] %}
+          {% if field.in_detail and key != registry.collection.title_field
+                and item[key] is not none and item[key] != '' %}
+            {% set _ = filled.append(field) %}
+          {% endif %}
+        {% endfor %}
+        {% if filled %}
+        <section class="spec-group">
+          <h2>{{ group.label }}</h2>
+          <dl class="spec-list">
+            {% for field in filled %}
+            <div class="spec-row">
+              <dt>{{ field.label }}</dt>
+              <dd>{{ field_value(item, field, ctx='detail') }}</dd>
+            </div>
+            {% endfor %}
+          </dl>
+        </section>
+        {% endif %}
+      {% endif %}
+    {% endfor %}
+  </div>
+</article>
+{% endblock %}

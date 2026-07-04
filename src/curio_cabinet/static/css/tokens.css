@@ -1,0 +1,117 @@
+/* Curio-Cabinet design tokens.
+   Semantic custom properties only — components never hard-code colors.
+   Retheme: override --accent-hue (config: collection.accent_hue) or any
+   semantic token from an instance stylesheet. */
+
+:root {
+  /* Accent: cognac / saddle leather by default. One hue to rebrand. */
+  --accent-hue: 45;
+
+  /* Type */
+  --font-ui: "Inter Var", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.9375rem;   /* 15px — data-dense app */
+  --text-lg: 1.125rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.75rem;
+  --leading-body: 1.5;
+  --leading-tight: 1.2;
+
+  /* Space (4px scale) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* Shape */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 14px;
+
+  /* Motion */
+  --ease: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --dur-fast: 120ms;
+  --dur: 180ms;
+
+  /* Layout */
+  --sidebar-w: 280px;
+  --card-min: 300px;
+  --header-h: 52px;
+}
+
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+  /* warm stone neutrals — suits leather + wood photography */
+  --bg: oklch(0.977 0.002 80);
+  --surface: oklch(1 0 0);
+  --surface-raised: oklch(1 0 0);
+  --border: oklch(0.906 0.004 80);
+  --border-strong: oklch(0.83 0.006 80);
+  --text: oklch(0.24 0.008 60);
+  --text-muted: oklch(0.5 0.01 60);
+  --text-faint: oklch(0.65 0.008 60);
+  --accent: oklch(0.55 0.125 var(--accent-hue));
+  --accent-soft: oklch(0.55 0.125 var(--accent-hue) / 0.09);
+  --accent-contrast: oklch(0.99 0 0);
+  --danger: oklch(0.55 0.19 25);
+  --focus: oklch(0.55 0.16 250);
+  --shadow-1: 0 1px 2px oklch(0 0 0 / 0.06);
+  --shadow-2: 0 4px 16px oklch(0 0 0 / 0.1);
+  --backdrop: oklch(0.2 0.01 60 / 0.4);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: oklch(0.205 0.006 75);
+  --surface: oklch(0.245 0.007 75);
+  --surface-raised: oklch(0.285 0.008 75);
+  --border: oklch(0.33 0.008 75);
+  --border-strong: oklch(0.42 0.01 75);
+  --text: oklch(0.92 0.005 80);
+  --text-muted: oklch(0.71 0.008 80);
+  --text-faint: oklch(0.55 0.008 80);
+  --accent: oklch(0.72 0.115 calc(var(--accent-hue) + 10));
+  --accent-soft: oklch(0.72 0.115 calc(var(--accent-hue) + 10) / 0.14);
+  --accent-contrast: oklch(0.18 0.01 60);
+  --danger: oklch(0.68 0.17 25);
+  --focus: oklch(0.7 0.14 250);
+  --shadow-1: none;
+  --shadow-2: 0 4px 20px oklch(0 0 0 / 0.4);
+  --backdrop: oklch(0 0 0 / 0.55);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
+    color-scheme: dark;
+    --bg: oklch(0.205 0.006 75);
+    --surface: oklch(0.245 0.007 75);
+    --surface-raised: oklch(0.285 0.008 75);
+    --border: oklch(0.33 0.008 75);
+    --border-strong: oklch(0.42 0.01 75);
+    --text: oklch(0.92 0.005 80);
+    --text-muted: oklch(0.71 0.008 80);
+    --text-faint: oklch(0.55 0.008 80);
+    --accent: oklch(0.72 0.115 calc(var(--accent-hue) + 10));
+    --accent-soft: oklch(0.72 0.115 calc(var(--accent-hue) + 10) / 0.14);
+    --accent-contrast: oklch(0.18 0.01 60);
+    --danger: oklch(0.68 0.17 25);
+    --focus: oklch(0.7 0.14 250);
+    --shadow-1: none;
+    --shadow-2: 0 4px 20px oklch(0 0 0 / 0.4);
+    --backdrop: oklch(0 0 0 / 0.55);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur: 0ms;
+  }
+}

@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Settings · {{ registry.collection.title }}{% endblock %}
+{% block nav %}
+  <a href="{{ url_for('admin.dashboard') }}">Admin</a>
+{% endblock %}
+{% block main_class %}page page-narrow{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+
+<section class="form-group">
+  <h2>Change password</h2>
+  <form method="post" action="{{ url_for('admin.settings_password') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="form-field">
+      <label for="current">Current password</label>
+      <input id="current" name="current" type="password" autocomplete="current-password" required>
+    </div>
+    <div class="form-field">
+      <label for="new">New password <span class="hint-inline">(12+ characters)</span></label>
+      <input id="new" name="new" type="password" autocomplete="new-password" minlength="12" required>
+    </div>
+    <button class="btn btn-primary" type="submit">Change password</button>
+  </form>
+  <p class="hint">Changing your password signs out every other device.</p>
+</section>
+
+<section class="form-group">
+  <h2>Two-factor authentication</h2>
+  {% if totp_svg %}
+    <p>Scan with your authenticator app, then confirm with a code:</p>
+    <div class="totp-qr">{{ totp_svg | safe }}</div>
+    <p class="hint mono">{{ totp_uri }}</p>
+    <form method="post" action="{{ url_for('admin.totp_confirm') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="form-field">
+        <label for="code">Code</label>
+        <input id="code" name="code" inputmode="numeric" maxlength="6" class="totp-input" required>
+      </div>
+      <button class="btn btn-primary" type="submit">Confirm & enable</button>
+    </form>
+  {% elif user['totp_enabled'] %}
+    <p>✓ Enabled</p>
+    <form method="post" action="{{ url_for('admin.totp_disable') }}"
+          onsubmit="return confirm('Disable two-factor authentication?')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn btn-danger" type="submit">Disable</button>
+    </form>
+  {% else %}
+    <p class="muted">Adds a 6-digit code step to sign-in. Strongly recommended.</p>
+    <form method="post" action="{{ url_for('admin.totp_begin') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn btn-primary" type="submit">Set up</button>
+    </form>
+  {% endif %}
+  <p class="hint">
+    Recovery: if you lose your authenticator and password, reset them with
+    <code>curio-cabinet reset-password</code> on the server. There is no
+    email reset by design.
+  </p>
+</section>
+{% endblock %}
