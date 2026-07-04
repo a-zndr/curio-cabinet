@@ -1,8 +1,12 @@
 {# Field rendering macros — the "config renders everywhere" contract.
    A new field in collection.yaml flows through these with zero template edits. #}
 
+{# ctx: 'table' | 'card' | 'detail'. In 'card' the whole card is already an
+   <a>, so this macro must never emit a nested anchor (invalid HTML that the
+   browser splits into phantom elements). #}
 {% macro field_value(item, field, ctx='table') -%}
   {%- set v = item[field.key] -%}
+  {%- set plain = (ctx == 'card') -%}
   {%- if v is none or v == '' -%}
     <span class="empty-dash">–</span>
   {%- elif field.type.value == 'boolean' -%}
@@ -12,12 +16,13 @@
       <span class="chip chip-sm">{{ tag }}</span>
     {%- endfor -%}
   {%- elif field.type.value == 'url' -%}
-    <a href="{{ v }}" rel="noopener nofollow" target="_blank" class="ext-link">{{ v | domain_only }}</a>
+    {%- if plain -%}{{ v | domain_only }}
+    {%- else -%}<a href="{{ v }}" rel="noopener nofollow" target="_blank" class="ext-link">{{ v | domain_only }}</a>{%- endif -%}
   {%- elif field.type.value in ('number', 'integer') and field.unit -%}
     <span class="num">{{ field | fmt_measure(v, all_units=(ctx == 'detail')) }}</span>
   {%- elif field.type.value in ('number', 'integer') -%}
     <span class="num">{{ '%g' | format(v) }}</span>
-  {%- elif field.link and item[field.link] -%}
+  {%- elif field.link and item[field.link] and not plain -%}
     <a href="{{ item[field.link] }}" rel="noopener nofollow" target="_blank">{{ v }}</a>
   {%- else -%}
     {{ v }}

@@ -130,11 +130,36 @@ def create_app(instance_root: str | None = None) -> Flask:
 
     @app.context_processor
     def _template_globals():
+        from flask import request
+        from markupsafe import Markup
+        from urllib.parse import urlencode
+
         session = current_session()
+
+        def url_with(**overrides):
+            """Current query string with some params overridden/added.
+            Multi-valued params in overrides accept a list; None drops a key."""
+            pairs = [
+                (k, v)
+                for k, v in request.args.items(multi=True)
+                if k not in overrides
+            ]
+            for key, value in overrides.items():
+                if value is None:
+                    continue
+                if isinstance(value, (list, tuple)):
+                    pairs.extend((key, v) for v in value)
+                else:
+                    pairs.append((key, value))
+            qs = urlencode(pairs)
+            return Markup("?" + qs if qs else request.path)
+
         return {
             "registry": g.registry,
             "csrf_token": session["csrf_token"] if session else "",
             "admin_user": session["username"] if session else None,
+            "url_with": url_with,
+            "MAX_SHARE_IDS": 100,
         }
 
     return app

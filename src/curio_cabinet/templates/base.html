@@ -4,7 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ registry.collection.title }}{% endblock %}</title>
-  {% block og %}{% endblock %}
+  {% if og %}
+    <meta property="og:title" content="{{ og.title }}">
+    <meta property="og:type" content="website">
+    {% if og.url %}<meta property="og:url" content="{{ og.url }}">{% endif %}
+    {% if og.image %}
+      <meta property="og:image" content="{{ og.image }}">
+      <meta name="twitter:card" content="summary_large_image">
+    {% endif %}
+  {% endif %}
+  {% block head_extra %}{% endblock %}
   <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">

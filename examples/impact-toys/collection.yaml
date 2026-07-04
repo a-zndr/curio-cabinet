@@ -27,7 +27,8 @@ fields:
   - key: type
     label: Type
     type: enum
-    values: [Paddle, Flogger, Cane, Whip, Slapper, Tawse, Strap, Quirt, Other]
+    values: [Whip, Galley Whip, Signal Whip, Snake Whip, Bullwhip, Quirt, Cat,
+             Flogger, Crop, Dragon Tail, Paddle, Cane, Other]
     strict: false               # admin may add new values; strict: true rejects them
     views: { table: true, card: secondary, filter: multi, pivot: [group] }
 
@@ -82,7 +83,7 @@ fields:
   - key: whip_type
     label: Whip Type
     type: enum
-    values: [Bullwhip, Snake Whip, Signal Whip, Stock Whip, Dragon Tail]
+    values: [Bull Whip, Snake Whip, Signal Whip, Hybrid Signal, Stock Whip]
     strict: false
     views: { filter: multi, pivot: [group] }
 

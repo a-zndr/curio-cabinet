@@ -1,0 +1,49 @@
+{# Pivot: one GROUP BY, rendered as a compact table with an inline bar. #}
+<div class="pivot">
+  <form class="pivot-controls" method="get" hx-get="{{ url_for('public.index') }}"
+        hx-target="#results" hx-select="#results" hx-swap="outerHTML"
+        hx-push-url="true" hx-trigger="change">
+    <input type="hidden" name="view" value="pivot">
+    <label>Group by
+      <select name="group">
+        {% for f in registry.pivot_group_fields %}
+          <option value="{{ f.key }}" {{ 'selected' if f.key == group_key }}>{{ f.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Measure
+      <select name="op">
+        <option value="count" {{ 'selected' if agg_op == 'count' }}>Count</option>
+        {% for f in registry.pivot_agg_fields %}
+          {% for op in f.pivot_ops if op != 'group' %}
+            <option value="{{ op }}" data-field="{{ f.key }}"
+              {{ 'selected' if agg_op == op and agg_key == f.key }}>{{ op|capitalize }} of {{ f.label }}</option>
+          {% endfor %}
+        {% endfor %}
+      </select>
+    </label>
+    {% if agg_op != 'count' %}<input type="hidden" name="agg" value="{{ agg_key }}">{% endif %}
+  </form>
+
+  {% set group_field = registry.by_key.get(group_key) %}
+  {% if group_field and group_field.type.value == 'tags' %}
+    <p class="hint">Items with multiple {{ group_field.label|lower }} appear in more than one group.</p>
+  {% endif %}
+
+  {% if pivot_rows %}
+    <table class="pivot-table">
+      <thead><tr><th>{{ group_field.label if group_field }}</th><th class="num">Items</th>{% if agg_op != 'count' %}<th class="num">{{ agg_op|capitalize }}</th>{% endif %}</tr></thead>
+      <tbody>
+        {% for row in pivot_rows %}
+          <tr>
+            <td class="pivot-label" style="--bar: {{ (row['n'] / pivot_max * 100)|round(1) }}%">{{ row['grp'] }}</td>
+            <td class="num">{{ row['n'] }}</td>
+            {% if agg_op != 'count' %}<td class="num">{{ row['val'] if row['val'] is not none else '–' }}</td>{% endif %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    {% include "_empty.html" %}
+  {% endif %}
+</div>

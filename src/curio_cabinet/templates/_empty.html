@@ -1,0 +1,11 @@
+<div class="empty-state">
+  <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       stroke-width="1.3" aria-hidden="true">
+    <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>
+  </svg>
+  <p class="empty-head">No matches</p>
+  <p class="hint">Try removing a filter or broadening your search.</p>
+  <a class="btn btn-sm" href="?view={{ view }}"
+     hx-get="?view={{ view }}" hx-target="#results" hx-select="#results"
+     hx-swap="outerHTML" hx-push-url="true">Clear filters</a>
+</div>

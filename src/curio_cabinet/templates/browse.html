@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% from "_filters.html" import filter_panel %}
+{% block content %}
+<div class="browse" data-selection-key="{{ registry.collection.slug }}">
+
+  {# desktop filter sidebar #}
+  <aside class="filter-sidebar">
+    {{ filter_panel(registry, options, args) }}
+  </aside>
+
+  <div class="browse-main">
+    <div class="browse-toolbar">
+      <form class="search-form" method="get" action="{{ url_for('public.index') }}"
+            hx-get="{{ url_for('public.index') }}" hx-target="#results"
+            hx-select="#results" hx-swap="outerHTML" hx-push-url="true"
+            hx-trigger="submit, input from:find input[name=q] delay:300ms">
+        {{ filter_panel(registry, options, args, hidden=True) }}
+        <input type="search" name="q" value="{{ args.get('q', '') }}"
+               placeholder="Search…" aria-label="Search" autocomplete="off">
+        <input type="hidden" name="view" value="{{ view }}">
+      </form>
+
+      <div class="view-switch" role="tablist" aria-label="View">
+        {% for v, label in [('cards','Cards'), ('table','Table'), ('pivot','Pivot')] %}
+          {% set vurl = url_with(view=v) %}
+          <a class="seg {{ 'is-active' if view == v }}" role="tab"
+             href="{{ vurl }}" hx-get="{{ vurl }}"
+             hx-target="#results" hx-select="#results" hx-swap="outerHTML" hx-push-url="true">{{ label }}</a>
+        {% endfor %}
+      </div>
+
+      <button class="btn btn-sm" type="button" data-toggle-select>Select</button>
+    </div>
+
+    {% include "_results.html" %}
+  </div>
+
+  {# mobile bottom toolbar (thumb zone) #}
+  <nav class="mobile-bar">
+    <button class="mobile-bar-btn" type="button" data-open-filters aria-label="Filters">
+      Filters {% if params.multi or params.ranges or params.search %}<span class="dot"></span>{% endif %}
+    </button>
+    <button class="mobile-bar-btn" type="button" data-toggle-select>Select</button>
+    {% if admin_user %}
+      <a class="mobile-bar-btn" href="{{ url_for('admin.item_new') }}">Add</a>
+    {% endif %}
+  </nav>
+
+  {# mobile filter sheet #}
+  <div class="sheet-backdrop" data-filter-sheet hidden>
+    <div class="sheet" role="dialog" aria-label="Filters">
+      <div class="sheet-handle"></div>
+      <div class="sheet-body">
+        {{ filter_panel(registry, options, args) }}
+      </div>
+    </div>
+  </div>
+
+  {# selection tray (shared Alpine-free store lives in app.js) #}
+  <div class="selection-tray" data-selection-tray hidden>
+    <span class="tray-count" data-tray-count>0 selected</span>
+    <button class="btn btn-sm" type="button" data-share-open>Share</button>
+    <button class="btn btn-sm" type="button" data-selection-clear>Clear</button>
+  </div>
+
+  {# share dialog #}
+  <dialog class="share-dialog" data-share-dialog>
+    <h2>Share this selection</h2>
+    <p class="muted">Anyone with this link can view these items — no account needed.</p>
+    <input type="text" data-share-url readonly>
+    <p class="hint" data-share-cap hidden>Only the first {{ MAX_SHARE_IDS or 100 }} items are included.</p>
+    <div class="form-actions">
+      <button class="btn btn-primary" type="button" data-share-copy>Copy link</button>
+      <button class="btn" type="button" data-share-native hidden>Share…</button>
+      <button class="btn" type="button" data-share-close>Close</button>
+    </div>
+  </dialog>
+</div>
+{% endblock %}

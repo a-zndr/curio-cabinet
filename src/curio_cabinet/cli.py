@@ -258,4 +258,11 @@ def run(ctx: click.Context, host: str, port: int, debug: bool) -> None:
     from .app import create_app
 
     app = create_app(instance_root=ctx.obj)
-    app.run(host=host, port=port, debug=debug)
+    if debug:
+        app.config["TEMPLATES_AUTO_RELOAD"] = True
+    # threaded so a browser's parallel asset requests don't serialize
+    app.run(host=host, port=port, debug=debug, threaded=True)
+
+
+if __name__ == "__main__":
+    main()

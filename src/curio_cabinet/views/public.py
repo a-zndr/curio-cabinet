@@ -1,39 +1,111 @@
-"""Public views: browse, item detail, share lists, image serving.
+"""Public views: browse (cards/table/pivot), item detail, share lists, images.
 
-The browse UI is minimal until the design pass lands; the routes and
-their contracts (URL state, content negotiation, strict image serving)
-are final.
+The browse UI uses one URL per state: filter/sort/view params live in the
+query string, and htmx requests to the SAME route return just the results
+fragment (content-negotiated on the HX-Request header). So hx-push-url
+records the real, shareable URL — refresh and back-button work.
 """
 
 from __future__ import annotations
 
-from flask import Blueprint, abort, g, render_template, request, send_file
-from markupsafe import escape
+from flask import (
+    Blueprint,
+    abort,
+    g,
+    render_template,
+    request,
+    send_file,
+    url_for,
+)
 
 from .. import images
-from ..query import build_select, count_items, parse_params
+from ..query import (
+    build_select,
+    count_items,
+    filter_options,
+    parse_params,
+    pivot,
+)
 
 bp = Blueprint("public", __name__)
 
 MAX_SHARE_IDS = 100
+VALID_VIEWS = ("cards", "table", "pivot")
+
+
+def _view_mode() -> str:
+    view = request.args.get("view", "cards")
+    return view if view in VALID_VIEWS else "cards"
+
+
+def _primary_images(rows) -> dict[str, str]:
+    """content_hash of each item's primary image, keyed by item id."""
+    ids = [r["id"] for r in rows]
+    if not ids:
+        return {}
+    marks = ", ".join("?" for _ in ids)
+    hits = g.db.execute(
+        "SELECT item_id, content_hash FROM images "
+        f"WHERE item_id IN ({marks}) AND position = 0",
+        ids,
+    ).fetchall()
+    return {r["item_id"]: r["content_hash"] for r in hits}
+
+
+def _browse_context():
+    registry = g.registry
+    params = parse_params(registry, request.args)
+    view = _view_mode()
+    total = count_items(g.db, registry, params)
+
+    ctx = {
+        "view": view,
+        "params": params,
+        "total": total,
+        "options": filter_options(g.db, registry),
+        "args": request.args,
+        "query_string": request.query_string.decode(),
+    }
+
+    if view == "pivot":
+        group_key = request.args.get("group") or (
+            registry.pivot_group_fields[0].key if registry.pivot_group_fields else None
+        )
+        agg_key = request.args.get("agg") or ""
+        agg_op = request.args.get("op", "count")
+        rows, max_n = [], 1
+        if group_key:
+            try:
+                rows = pivot(
+                    g.db, registry, params,
+                    group_key=group_key, agg_op=agg_op,
+                    agg_key=agg_key or None,
+                )
+            except ValueError:
+                rows, agg_op = [], "count"
+            max_n = max((r["n"] for r in rows), default=1)
+        ctx.update(
+            pivot_rows=rows, pivot_max=max_n,
+            group_key=group_key, agg_key=agg_key, agg_op=agg_op,
+        )
+    else:
+        sql, binds = build_select(registry, params)
+        rows = g.db.execute(sql, binds).fetchall()
+        ctx.update(rows=rows, thumbs=_primary_images(rows))
+        if view == "table":
+            requested = request.args.getlist("col")
+            valid = [c for c in requested if c in registry.by_key]
+            ctx["columns"] = [
+                registry.by_key[c] for c in (valid or registry.table_default_keys)
+            ]
+    return ctx
 
 
 @bp.get("/")
 def index():
-    params = parse_params(g.registry, request.args)
-    total = count_items(g.db, g.registry, params)
-    sql, binds = build_select(g.registry, params)
-    rows = g.db.execute(sql, binds).fetchall()
-    title_field = g.registry.collection.title_field
-    lines = "".join(
-        f"<li><a href='/item/{escape(row['id'])}'>{escape(row['id'])}: "
-        f"{escape(row[title_field])}</a></li>"
-        for row in rows
-    )
-    return (
-        f"<h1>{escape(g.registry.collection.title)}</h1>"
-        f"<p>{total} items</p><ol>{lines}</ol>"
-    )
+    ctx = _browse_context()
+    template = "_results.html" if request.headers.get("HX-Request") else "browse.html"
+    return render_template(template, **ctx)
 
 
 @bp.get("/item/<item_id>")
@@ -44,7 +116,86 @@ def item_detail(item_id: str):
     if row is None:
         abort(404)
     gallery = images.images_for_item(g.db, item_id)
-    return render_template("detail.html", item=dict(row), gallery=gallery)
+    og = _og_for(item_id, gallery)
+    return render_template("detail.html", item=dict(row), gallery=gallery, og=og)
+
+
+@bp.get("/list")
+def share_list():
+    """Read-only view of a selection encoded entirely in the URL.
+    No server state, no anonymous writes."""
+    raw = request.args.get("ids", "")
+    ids, truncated = _parse_ids(raw)
+    rows, missing = [], 0
+    if ids:
+        marks = ", ".join("?" for _ in ids)
+        found = {
+            r["id"]: r
+            for r in g.db.execute(
+                f'SELECT * FROM "{g.registry.table}" WHERE "id" IN ({marks})', ids
+            ).fetchall()
+        }
+        rows = [dict(found[i]) for i in ids if i in found]  # preserve URL order
+        missing = len(ids) - len(rows)
+
+    title = (request.args.get("title", "") or "").strip()[:80]
+    return render_template(
+        "list.html",
+        rows=rows,
+        thumbs=_primary_images(rows),
+        missing=missing,
+        truncated=truncated,
+        list_title=title,
+        og=_list_og(rows, title),
+    )
+
+
+def _parse_ids(raw: str) -> tuple[list[str], bool]:
+    seen: list[str] = []
+    for token in raw.split(","):
+        token = token.strip()
+        # match the config's id charset; ignore anything hostile
+        if token and token.replace("_", "").replace("-", "").isalnum():
+            if token not in seen:
+                seen.append(token)
+    truncated = len(seen) > MAX_SHARE_IDS
+    return seen[:MAX_SHARE_IDS], truncated
+
+
+def _og_for(item_id: str, gallery) -> dict:
+    title_field = g.registry.collection.title_field
+    row = g.db.execute(
+        f'SELECT "{title_field}" AS t FROM "{g.registry.table}" WHERE "id" = ?',
+        (item_id,),
+    ).fetchone()
+    og = {
+        "title": f"{row['t']} · {g.registry.collection.title}" if row else
+                 g.registry.collection.title,
+        "url": url_for("public.item_detail", item_id=item_id, _external=True),
+    }
+    if gallery:
+        og["image"] = url_for(
+            "public.image", content_hash=gallery[0]["content_hash"],
+            variant="og", _external=True,
+        )
+    return og
+
+
+def _list_og(rows, title: str) -> dict:
+    coll = g.registry.collection.title
+    # never reflect the user-supplied title into OG tags (spoofing vector);
+    # OG title is always the generic, server-controlled string
+    og_title = f"{len(rows)} items from {coll}"
+    og = {"title": og_title, "url": request.url}
+    if rows:
+        thumbs = _primary_images(rows)
+        first = next((r["id"] for r in rows if r["id"] in thumbs), None)
+        if first:
+            og["image"] = url_for(
+                "public.image", content_hash=thumbs[first],
+                variant="og", _external=True,
+            )
+    return og
 
 
 @bp.get("/theme.css")

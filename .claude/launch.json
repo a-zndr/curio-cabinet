@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "curio-cabinet",
+      "runtimeExecutable": ".venv/bin/python",
+      "runtimeArgs": ["-m", "curio_cabinet.cli", "run", "--host", "127.0.0.1", "--port", "8099"],
+      "port": 8099,
+      "env": {
+        "CABINET_INSTANCE": "/Users/zndr/.curio-cabinet/toys"
+      }
+    }
+  ]
+}
