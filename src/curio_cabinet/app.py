@@ -14,12 +14,13 @@ from .schema import backup_database, detect_drift, rebuild
 
 log = logging.getLogger(__name__)
 
-# One conscious tradeoff in this policy: 'unsafe-eval' is required by
-# Alpine.js. It is defense-in-depth behind Jinja autoescape (no user data
-# is ever rendered with |safe) and HttpOnly session cookies.
+# Strict CSP with no 'unsafe-eval': the frontend is htmx + small vanilla
+# modules precisely so this policy can hold. Adding a framework that needs
+# eval (e.g. standard Alpine.js) would silently break under this header —
+# that is intentional friction.
 CSP = (
     "default-src 'self'; "
-    "script-src 'self' 'unsafe-eval'; "
+    "script-src 'self'; "
     "img-src 'self' data:; "
     "style-src 'self'; "
     "base-uri 'self'; "
@@ -30,7 +31,25 @@ CSP = (
 
 
 def _boot_schema(inst: Instance) -> None:
-    """Apply additive config drift automatically; refuse destructive drift."""
+    """Apply additive config drift automatically; refuse destructive drift.
+
+    Serialized across workers with an exclusive file lock so concurrent
+    gunicorn workers can't race the backup/rebuild; each worker re-detects
+    drift after acquiring the lock.
+    """
+    import fcntl
+
+    lock_path = inst.root / "data" / ".boot.lock"
+    lock_file = open(lock_path, "w")
+    fcntl.flock(lock_file, fcntl.LOCK_EX)
+    try:
+        _boot_schema_locked(inst)
+    finally:
+        fcntl.flock(lock_file, fcntl.LOCK_UN)
+        lock_file.close()
+
+
+def _boot_schema_locked(inst: Instance) -> None:
     conn = connect(inst.db_path, journal_mode=inst.journal_mode)
     try:
         ensure_engine_tables(conn)

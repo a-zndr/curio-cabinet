@@ -118,4 +118,6 @@ def test_filter_options(populated, registry):
     assert opts["multi"]["kind"] == ["Gadget", "Widget"]
     assert set(opts["multi"]["materials"]) == {"leather", "wood", "nylon"}
     assert opts["multi"]["active"] == ["Yes", "No"]
-    assert opts["range"]["length"] == (50.0, 200.0)
+    # range bounds are expressed in display[0] units (inches here)
+    assert opts["range"]["length"] == (pytest.approx(19.69, abs=0.01),
+                                       pytest.approx(78.74, abs=0.01))

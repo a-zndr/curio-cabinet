@@ -61,8 +61,10 @@ SQL_TYPES: dict[FieldType, str] = {
     FieldType.date: "TEXT",
 }
 
-# Column names the engine owns on the items table.
-RESERVED_KEYS = {"id", "created_at", "updated_at"}
+# Column names the engine owns on the items table (in DDL order around the
+# data columns). Single source for every module that builds row tuples.
+ENGINE_COLS = ("id", "created_at", "updated_at")
+RESERVED_KEYS = set(ENGINE_COLS)
 
 # Table names the engine owns in the database.
 RESERVED_TABLES = {"users", "sessions", "login_attempts", "images", "_meta"}
@@ -342,11 +344,54 @@ class CollectionConfig(BaseModel):
             object.__setattr__(self, "groups", (*self.groups, extra))
         return self
 
+    @model_validator(mode="after")
+    def _label_collisions(self) -> "CollectionConfig":
+        """Labels double as CSV headers; ambiguous mappings corrupt imports."""
+        taken: dict[str, str] = {}
+        for f in self.fields:
+            for name in {f.key.lower(), f.label.lower()}:
+                owner = taken.get(name)
+                if owner is not None and owner != f.key:
+                    raise ValueError(
+                        f"field {f.key!r}: key/label {name!r} collides with "
+                        f"field {owner!r} (labels must be unambiguous)"
+                    )
+                taken[name] = f.key
+        return self
+
+    @model_validator(mode="after")
+    def _defaults_coerce(self) -> "CollectionConfig":
+        """A default that can't pass the field's own coercion is a config bug."""
+        from .coerce import CoercionError, coerce_value  # deferred: avoids cycle
+
+        for f in self.fields:
+            if f.default is None:
+                continue
+            try:
+                coerce_value(f, f.default)
+            except CoercionError as exc:
+                raise ValueError(f"field {f.key!r}: invalid default: {exc.reason}")
+        return self
+
+    def schema_snapshot(self) -> list[dict[str, Any]]:
+        """Logical schema (type + unit identity) recorded in _meta and used
+        for drift detection — SQLite affinity alone can't see longtext→tags
+        or a unit.store change."""
+        snapshot = []
+        for f in self.fields:
+            snapshot.append(
+                {
+                    "key": f.key,
+                    "type": f.type.value,
+                    "store": f.unit.store if f.unit else None,
+                    "dimension": f.unit.dimension if f.unit else None,
+                }
+            )
+        return snapshot
+
     def sha(self) -> str:
         """Stable hash of the schema-relevant parts, recorded in _meta."""
-        payload = json.dumps(
-            [[f.key, f.type.value] for f in self.fields], separators=(",", ":")
-        )
+        payload = json.dumps(self.schema_snapshot(), separators=(",", ":"))
         return hashlib.sha256(payload.encode()).hexdigest()
 
 

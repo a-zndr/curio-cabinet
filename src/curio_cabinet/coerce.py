@@ -62,7 +62,7 @@ def coerce_value(field: FieldSpec, raw: Any) -> Any:
         return str(raw)  # text / longtext
     except CoercionError:
         raise
-    except (ValueError, TypeError) as exc:
+    except (ValueError, TypeError, OverflowError) as exc:
         raise CoercionError(field.key, raw, str(exc)) from None
 
 
@@ -79,6 +79,11 @@ def _coerce_numeric(field: FieldSpec, raw: Any) -> float | int:
         value = float(text)
     else:
         value = float(raw)
+
+    import math
+
+    if not math.isfinite(value):
+        raise CoercionError(field.key, raw, "must be a finite number")
 
     if field.type is FieldType.integer:
         if abs(value - round(value)) > 1e-9:

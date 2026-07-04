@@ -23,7 +23,7 @@ from typing import Any, Mapping
 
 from .config import FieldSpec, FieldType
 from .registry import FieldRegistry
-from .units import UnitError, convert
+from .units import UnitError, convert, parse_measure
 
 __all__ = [
     "QueryParams",
@@ -47,19 +47,27 @@ class QueryParams:
 
 
 def _range_bound(field: FieldSpec, raw: str) -> float | None:
-    try:
-        value = float(raw)
-    except ValueError:
-        return None
+    """Parse a min_/max_ bound into STORE units.
+
+    Bare numbers are interpreted in the field's first display unit (what
+    the filter widget shows); unit suffixes ("24 in") are honored via the
+    same parser as every other write path. Non-finite values (nan/inf
+    would bind as NULL and silently match nothing) are dropped.
+    """
+    import math
+
     unit = field.unit
-    if unit and unit.dimension and unit.store and unit.display:
-        shown = unit.display[0]
-        if shown != unit.store:
-            try:
-                value = convert(value, shown, unit.store, unit.dimension)
-            except UnitError:
-                return None
-    return value
+    try:
+        if unit and unit.dimension and unit.store and unit.display:
+            value = parse_measure(
+                raw, dimension=unit.dimension, store=unit.display[0]
+            )
+            value = convert(value, unit.display[0], unit.store, unit.dimension)
+        else:
+            value = float(raw)
+    except (UnitError, ValueError, TypeError):
+        return None
+    return value if math.isfinite(value) else None
 
 
 def parse_params(
@@ -93,7 +101,7 @@ def parse_params(
         order = registry.collection.default_sort.order
 
     try:
-        page = max(1, int(args.get("page", 1)))
+        page = min(max(1, int(args.get("page", 1))), 100_000)
     except (TypeError, ValueError):
         page = 1
 
@@ -252,5 +260,15 @@ def filter_options(
         row = conn.execute(
             f"SELECT MIN({col}) AS lo, MAX({col}) AS hi {_from(registry)}"
         ).fetchone()
-        out["range"][f.key] = (row["lo"], row["hi"])
+        lo, hi = row["lo"], row["hi"]
+        # bounds are shown/entered in the first display unit, so convert
+        unit = f.unit
+        if unit and unit.dimension and unit.store and unit.display:
+            shown = unit.display[0]
+            if shown != unit.store:
+                if lo is not None:
+                    lo = round(convert(lo, unit.store, shown, unit.dimension), 2)
+                if hi is not None:
+                    hi = round(convert(hi, unit.store, shown, unit.dimension), 2)
+        out["range"][f.key] = (lo, hi)
     return out

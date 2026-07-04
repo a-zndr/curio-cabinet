@@ -19,6 +19,12 @@
     localStorage.setItem("cc-theme", next);
   });
 
+  // Confirmation dialogs (inline handlers are blocked by the strict CSP) ----
+  document.addEventListener("submit", function (event) {
+    var form = event.target.closest("form[data-confirm]");
+    if (form && !confirm(form.dataset.confirm)) event.preventDefault();
+  });
+
   // Conditional form groups (group.when in the config) ----------------------
   function syncConditionalGroups() {
     document.querySelectorAll("[data-when-field]").forEach(function (group) {

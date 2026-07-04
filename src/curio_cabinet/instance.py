@@ -33,6 +33,8 @@ def load_dotenv(path: Path) -> dict[str, str]:
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, _, value = line.partition("=")
+        # allow inline comments: KEY=VALUE  # explanation
+        value, _, _ = value.partition(" #")
         values[key.strip()] = value.strip().strip("'\"")
     return values
 

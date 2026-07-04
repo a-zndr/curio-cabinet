@@ -39,6 +39,31 @@ def cookie_name() -> str:
     return "__Host-session" if current_app.config["COOKIE_SECURE"] else "cc_session"
 
 
+def device_cookie_name() -> str:
+    return "__Host-device" if current_app.config["COOKIE_SECURE"] else "cc_device"
+
+
+def _is_known_device(username: str) -> bool:
+    return auth.verify_device_token(
+        current_app.config["SECRET_KEY"],
+        username,
+        request.cookies.get(device_cookie_name()),
+    )
+
+
+def _set_device_cookie(resp: Response, username: str) -> Response:
+    resp.set_cookie(
+        device_cookie_name(),
+        auth.device_token(current_app.config["SECRET_KEY"], username),
+        max_age=365 * 24 * 3600,
+        secure=current_app.config["COOKIE_SECURE"],
+        httponly=True,
+        samesite="Lax",
+        path="/",
+    )
+    return resp
+
+
 def _set_session_cookie(resp: Response, token: str) -> Response:
     resp.set_cookie(
         cookie_name(),
@@ -97,7 +122,11 @@ def login():
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
-        wait = auth.login_delay_remaining(g.db, username)
+        # known devices (successful past login) bypass the username throttle,
+        # so an attacker hammering the admin username can't lock the admin out
+        wait = 0 if _is_known_device(username) else auth.login_delay_remaining(
+            g.db, username
+        )
         if wait:
             error = f"Too many attempts — try again in {wait}s."
         else:
@@ -114,7 +143,9 @@ def login():
             else:
                 token, _ = auth.create_session(g.db, user["id"])
                 resp = redirect(request.args.get("next") or url_for("admin.dashboard"))
-                return _set_session_cookie(_safe_redirect(resp), token)
+                return _set_device_cookie(
+                    _set_session_cookie(_safe_redirect(resp), token), username
+                )
     return render_template("admin/login.html", error=error, step="password")
 
 
@@ -128,7 +159,9 @@ def login_totp():
     error = None
     if request.method == "POST":
         username = pre["username"]
-        wait = auth.login_delay_remaining(g.db, username)
+        wait = 0 if _is_known_device(username) else auth.login_delay_remaining(
+            g.db, username
+        )
         code = request.form.get("code", "")
         if wait:
             error = f"Too many attempts — try again in {wait}s."
@@ -137,7 +170,8 @@ def login_totp():
             token, _ = auth.promote_session(
                 g.db, request.cookies.get(cookie_name())
             )
-            return _set_session_cookie(redirect(url_for("admin.dashboard")), token)
+            resp = _set_session_cookie(redirect(url_for("admin.dashboard")), token)
+            return _set_device_cookie(resp, username)
         else:
             auth.record_attempt(g.db, username, request.remote_addr, success=False)
             error = "Invalid code."

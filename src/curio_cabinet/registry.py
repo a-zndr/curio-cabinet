@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from functools import cached_property
 
-from .config import CollectionConfig, FieldSpec, GroupSpec
+from .config import ENGINE_COLS, CollectionConfig, FieldSpec, GroupSpec
 
 __all__ = ["FieldRegistry"]
 
@@ -89,6 +89,6 @@ class FieldRegistry:
 
     def quoted(self, key: str) -> str:
         """Double-quoted identifier for a registered key. Raises on strangers."""
-        if key not in self.by_key and key not in ("id", "created_at", "updated_at"):
+        if key not in self.by_key and key not in ENGINE_COLS:
             raise KeyError(f"unregistered field: {key!r}")
         return f'"{key}"'

@@ -47,6 +47,18 @@ def item_detail(item_id: str):
     return render_template("detail.html", item=dict(row), gallery=gallery)
 
 
+@bp.get("/theme.css")
+def theme_css():
+    """Config-driven theme overrides, served as CSS so the strict CSP
+    (no inline styles) holds."""
+    hue = g.registry.collection.accent_hue
+    body = f":root {{ --accent-hue: {int(hue)}; }}\n" if hue is not None else ""
+    return body, 200, {
+        "Content-Type": "text/css",
+        "Cache-Control": "public, max-age=3600",
+    }
+
+
 @bp.get("/images/<content_hash>/<variant>")
 def image(content_hash: str, variant: str):
     """Content-addressed image serving. Validation before any file access:

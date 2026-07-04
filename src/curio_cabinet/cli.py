@@ -184,8 +184,11 @@ def import_csv_cmd(ctx: click.Context, path: str, dry_run: bool) -> None:
     inst = _instance(ctx)
     conn = _open(inst)
     report = import_csv(
-        conn, inst.registry, Path(path).read_text(encoding="utf-8"), dry_run=dry_run
+        conn, inst.registry, Path(path).read_text(encoding="utf-8-sig"),
+        dry_run=dry_run,
     )
+    for note in report.notes:
+        click.echo(f"note: {note}")
     for err in report.errors[:20]:
         click.echo(f"error: {err}")
     if len(report.errors) > 20:

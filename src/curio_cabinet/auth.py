@@ -191,8 +191,28 @@ def check_password(
 #   failures:  1  2  3   4   5   6  ...
 #   delay (s): 0  2  8  30  60  300 (capped)
 # The clock restarts from the most recent failure; success clears it.
+#
+# A username-keyed throttle alone is a denial-of-service handle: an
+# attacker hammering the (single, guessable) admin username keeps the
+# delay window rolling forever and locks the real admin out. Devices that
+# have successfully signed in before hold a signed "known device" cookie
+# that bypasses the username throttle — the attacker stays throttled, the
+# admin's own browser never is.
 
 _DELAYS = (0, 0, 2, 8, 30, 60, 300)
+
+
+def device_token(secret: str, username: str) -> str:
+    """Stable HMAC tag marking a browser that has signed in before."""
+    return hmac.new(
+        secret.encode(), f"known-device:{username}".encode(), hashlib.sha256
+    ).hexdigest()
+
+
+def verify_device_token(secret: str, username: str, token: str | None) -> bool:
+    if not token:
+        return False
+    return hmac.compare_digest(device_token(secret, username), token)
 
 
 def login_delay_remaining(conn: sqlite3.Connection, username: str) -> int:

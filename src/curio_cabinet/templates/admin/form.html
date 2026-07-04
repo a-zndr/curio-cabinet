@@ -71,7 +71,7 @@
         </form>
         {% endif %}
         <form method="post" action="{{ url_for('admin.image_delete', image_id=image['id']) }}"
-              onsubmit="return confirm('Delete this image?')">
+              data-confirm="Delete this image?">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <button class="btn btn-sm btn-danger" type="submit">Delete</button>
         </form>
@@ -94,7 +94,7 @@
 
 <section class="danger-zone">
   <form method="post" action="{{ url_for('admin.item_delete', item_id=item['id']) }}"
-        onsubmit="return confirm('Delete {{ item['id'] }} and its images? This cannot be undone.')">
+        data-confirm="Delete {{ item['id'] }} and its images? This cannot be undone.">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <button class="btn btn-danger" type="submit">Delete this item</button>
   </form>
