@@ -1,0 +1,25 @@
+# Instance data must never enter the engine repo
+instance/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Tooling
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS
+.DS_Store
