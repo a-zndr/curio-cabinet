@@ -8,6 +8,7 @@ records the real, shareable URL — refresh and back-button work.
 
 from __future__ import annotations
 
+import unicodedata
 from dataclasses import replace
 from urllib.parse import urlencode
 
@@ -37,7 +38,28 @@ from ..units import convert
 bp = Blueprint("public", __name__)
 
 MAX_SHARE_IDS = 100
+MAX_TITLE_LEN = 30
 VALID_VIEWS = ("cards", "table", "pivot")
+
+
+def _clean_title(raw: str) -> str:
+    """Sanitize the user-supplied share-list title.
+
+    HTML-injection safety already comes from Jinja autoescaping (the title
+    renders only in autoescaped text contexts, never in OG tags or a JS
+    context). This is input hygiene / defense-in-depth: drop control and
+    format characters — including bidi overrides (U+202E) and zero-width
+    joiners used for display spoofing — collapse runs of whitespace, and
+    cap the length.
+    """
+    # Keep whitespace (so word boundaries survive) but drop control/format
+    # chars — tabs/newlines are whitespace and get normalized by the split
+    # below; bidi overrides and zero-width joiners are format chars and go.
+    stripped = "".join(
+        ch for ch in (raw or "")
+        if ch.isspace() or unicodedata.category(ch)[0] != "C"
+    )
+    return " ".join(stripped.split())[:MAX_TITLE_LEN]
 
 
 def _view_mode() -> str:
@@ -319,7 +341,7 @@ def share_list():
         rows = [dict(found[i]) for i in ids if i in found]  # preserve URL order
         missing = len(ids) - len(rows)
 
-    title = (request.args.get("title", "") or "").strip()[:30]
+    title = _clean_title(request.args.get("title", ""))
     return render_template(
         "list.html",
         rows=rows,

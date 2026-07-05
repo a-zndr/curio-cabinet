@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
-"""Migrate a V1 toy-db (Flask + SQLite `toys` table) into a Curio-Cabinet
-instance built from examples/impact-toys/collection.yaml.
+"""Migrate the original V1 toy-db (Flask + SQLite `toys` table) into a
+Curio-Cabinet instance whose collection.yaml matches that V1 schema.
+
+This is a bespoke one-off tied to the original V1 column layout (the
+COLUMN_MAP below); it is not a general-purpose importer. For arbitrary
+data use `curio-cabinet import-csv` instead.
 
 Everything runs through the engine's one coercion path, so the same unit
 parsing / validation that guards admin writes also guards this import.

@@ -1,23 +1,27 @@
-# A contrasting example: a camera-lens collection. Nothing in the engine
-# knows about toys OR lenses — both are just field configs.
+# Curio-Cabinet example: a camera-lens collection.
+# Nothing in the engine is lens-specific — this is just a field config.
+# Full reference: docs/config-reference.md (or `curio-cabinet config-reference`).
 
 collection:
   title: "Lens Cabinet"
   slug: lenses
-  id:
-    strategy: sequential
-    width: 3
+  id: { strategy: sequential, width: 3 }
   title_field: model
   default_sort: { field: focal_length, order: asc }
-  accent_hue: 250            # cool blue-violet instead of the toy cognac
+  accent: "#3b6fd4"            # a full hex accent (set one in Settings → Customize)
 
 fields:
   - key: brand
     label: Brand
-    type: enum
-    values: [Canon, Nikon, Sony, Fujifilm, Sigma, Tamron, Voigtländer, Other]
-    strict: false
+    type: text
+    required: true
+    suggest: true              # admin form autocompletes from existing brands
+    link: brand_url            # render as a link to the brand's site
     views: { table: true, card: secondary, filter: multi, pivot: [group] }
+
+  - key: brand_url
+    label: Brand Site
+    type: url
 
   - key: model
     label: Model
@@ -29,8 +33,9 @@ fields:
   - key: mount
     label: Mount
     type: enum
-    values: [EF, RF, F, E, X, L]
-    views: { filter: multi, pivot: [group] }
+    values: [EF, RF, F, E, X, L, MFT]
+    strict: false
+    views: { table: true, card: secondary, filter: multi, pivot: [group] }
 
   - key: focal_length
     label: Focal Length
@@ -42,18 +47,18 @@ fields:
     label: Max Aperture
     type: number
     unit: { label: "f/" }
-    views: { table: true, card: secondary, filter: range }
-
-  - key: weight
-    label: Weight
-    type: number
-    unit: { dimension: mass, store: g, display: [g, oz] }
     views: { table: true, filter: range, pivot: [avg] }
 
   - key: prime
     label: Prime
     type: boolean
     views: { filter: multi, pivot: [group] }
+
+  - key: weight
+    label: Weight
+    type: number
+    unit: { dimension: mass, store: g, display: [g, oz] }
+    views: { table: true, filter: range, pivot: [avg] }
 
   - key: acquired
     label: Acquired
@@ -66,12 +71,18 @@ fields:
     searchable: true
 
 groups:
-  - key: core
+  - key: lens
     label: Lens
-    fields: [brand, model, mount, prime]
+    fields: [brand, brand_url, model, mount, prime]
   - key: optics
     label: Optics
     fields: [focal_length, max_aperture, weight]
   - key: history
     label: History
     fields: [acquired, notes]
+
+presets:
+  - key: rf
+    label: RF mount
+    filter: { field: mount, in: [RF] }
+    columns: [brand, model, focal_length, max_aperture, weight]

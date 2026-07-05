@@ -808,20 +808,45 @@ body.panel-open { overflow: hidden; }
 
 .selection-tray {
   position: fixed;
-  bottom: calc(var(--space-3) + env(safe-area-inset-bottom));
+  bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%);
-  z-index: 45;
+  z-index: 35;              /* above the mobile bar (25), below the filter sheet (40) */
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  background: var(--surface-raised);
-  border: 1px solid var(--border-strong);
+  gap: var(--space-2);
+  max-width: calc(100vw - 2 * var(--space-3));
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  /* inverted pill: reads as a solid, floating snackbar in both themes,
+     instead of a white-on-near-white card that fades into the page */
+  background: var(--text);
+  color: var(--bg);
+  border: 1px solid var(--text);
   border-radius: 999px;
-  box-shadow: var(--shadow-2);
+  box-shadow: 0 6px 24px oklch(0 0 0 / 0.28), 0 2px 6px oklch(0 0 0 / 0.2);
 }
-.tray-count { font-size: var(--text-sm); font-weight: 550; }
+/* lift clear of the mobile bottom bar so they don't overlap */
+@media (max-width: 767px) {
+  .selection-tray { bottom: calc(64px + env(safe-area-inset-bottom)); }
+}
+.tray-count { font-size: var(--text-sm); font-weight: 600; white-space: nowrap; }
+/* buttons sit on the inverted pill, so re-derive their colors from --bg */
+.selection-tray .btn {
+  background: transparent;
+  border-color: color-mix(in oklab, var(--bg) 45%, transparent);
+  color: var(--bg);
+}
+.selection-tray .btn:hover {
+  background: color-mix(in oklab, var(--bg) 16%, transparent);
+}
+.selection-tray [data-share-open] {   /* primary action stays the accent */
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+.selection-tray [data-share-open]:hover {
+  background: color-mix(in oklab, var(--accent) 88%, white);
+}
 
 .share-dialog {
   border: 1px solid var(--border);

@@ -10,14 +10,15 @@ def _raw() -> dict:
     return copy.deepcopy(BASE_CONFIG)
 
 
-def test_example_config_loads():
-    config = load_config(REPO / "examples" / "impact-toys" / "collection.yaml")
-    assert config.collection.slug == "toys"
-    keys = [f.key for f in config.fields]
-    assert "maker" in keys and "whip_type" in keys
-    # every field ends up in a group
-    grouped = {k for g in config.groups for k in g.fields}
-    assert grouped == set(keys)
+def test_example_configs_load():
+    paths = sorted((REPO / "examples").glob("*/collection.yaml"))
+    assert paths, "no example configs found"
+    for path in paths:
+        config = load_config(path)
+        keys = [f.key for f in config.fields]
+        # every field ends up in exactly one group
+        grouped = {k for g in config.groups for k in g.fields}
+        assert grouped == set(keys), path
 
 
 def test_ungrouped_fields_get_implicit_other_group():
@@ -97,7 +98,7 @@ def test_table_defaults_off():
 def test_presets_validated():
     raw = _raw()
     raw["presets"] = [
-        {"key": "whips", "label": "Whips",
+        {"key": "picks", "label": "Picks",
          "filter": {"field": "kind", "in": ["Widget"]},
          "columns": ["name", "length"]},
     ]
@@ -120,9 +121,9 @@ def test_presets_validated():
 
 
 def test_example_config_has_presets():
-    config = load_config(REPO / "examples" / "impact-toys" / "collection.yaml")
+    config = load_config(REPO / "examples" / "hand-tools" / "collection.yaml")
     keys = {p.key for p in config.presets}
-    assert {"whips", "floggers"} <= keys
+    assert {"planes", "chisels", "saws"} <= keys
 
 
 def test_accent_hex_validated_and_normalized():

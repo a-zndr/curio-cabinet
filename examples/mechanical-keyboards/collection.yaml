@@ -1,0 +1,102 @@
+# Curio-Cabinet example: a mechanical-keyboard collection.
+
+collection:
+  title: "Keyboard Collection"
+  slug: keyboards
+  id: { strategy: sequential, width: 3 }
+  title_field: name
+  default_sort: { field: brand, order: asc }
+  accent: "#7c5cff"
+
+fields:
+  - key: brand
+    label: Brand
+    type: text
+    required: true
+    suggest: true
+    link: brand_url
+    views: { table: true, card: secondary, filter: multi, pivot: [group] }
+
+  - key: brand_url
+    label: Brand Site
+    type: url
+
+  - key: name
+    label: Name
+    type: text
+    required: true
+    searchable: true
+    views: { table: true }
+
+  - key: layout
+    label: Layout
+    type: enum
+    values: ["40%", "60%", "65%", "75%", "TKL", "Full-size", "Ortho", "Split"]
+    strict: false
+    views: { table: true, card: secondary, filter: multi, pivot: [group] }
+
+  - key: switches
+    label: Switches
+    type: text
+    suggest: true
+    views: { table: true, card: secondary, filter: multi }
+
+  - key: switch_type
+    label: Switch Type
+    type: enum
+    values: [Linear, Tactile, Clicky]
+    strict: false
+    views: { filter: multi, pivot: [group] }
+
+  - key: keycaps
+    label: Keycaps
+    type: text
+
+  - key: hotswap
+    label: Hotswap
+    type: boolean
+    views: { filter: multi, pivot: [group] }
+
+  - key: wireless
+    label: Wireless
+    type: boolean
+    views: { filter: multi }
+
+  - key: weight
+    label: Weight
+    type: number
+    unit: { dimension: mass, store: g, display: [g, oz] }
+    views: { filter: range, pivot: [avg] }
+
+  - key: price
+    label: Price
+    type: number
+    unit: { label: "$" }
+    views: { table: true, filter: range, pivot: [avg, min, max] }
+
+  - key: acquired
+    label: Acquired
+    type: date
+    views: { table: true }
+
+  - key: notes
+    label: Notes
+    type: longtext
+    searchable: true
+
+groups:
+  - key: overview
+    label: Overview
+    fields: [brand, brand_url, name, layout]
+  - key: build
+    label: Build
+    fields: [switches, switch_type, keycaps, hotswap, wireless, weight]
+  - key: extras
+    label: Details
+    fields: [price, acquired, notes]
+
+presets:
+  - key: compact
+    label: Compact
+    filter: { field: layout, in: ["40%", "60%", "65%"] }
+    columns: [brand, name, switches, switch_type, price]

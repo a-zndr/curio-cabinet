@@ -150,15 +150,15 @@
     <summary class="btn btn-sm">Add a specialty table</summary>
     <form method="post" action="{{ url_for('admin.customize_add_preset') }}" class="form-grid">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <div class="form-field"><label>Name</label><input name="label" placeholder="Whips"></div>
-      <div class="form-field"><label>Key</label><input name="key" placeholder="whips"></div>
+      <div class="form-field"><label>Name</label><input name="label" placeholder="Primes"></div>
+      <div class="form-field"><label>Key</label><input name="key" placeholder="primes"></div>
       <div class="form-field">
         <label>Filter field</label>
         <select name="filter_field">
           {% for f in registry.pivot_group_fields %}<option value="{{ f.key }}">{{ f.label }}</option>{% endfor %}
         </select>
       </div>
-      <div class="form-field"><label>Filter values <span class="hint-inline">(comma-separated)</span></label><input name="filter_values" placeholder="Whip, Snake Whip"></div>
+      <div class="form-field"><label>Filter values <span class="hint-inline">(comma-separated)</span></label><input name="filter_values" placeholder="RF, EF"></div>
       <div class="form-field cfg-cols">
         <label>Columns</label>
         <div class="cfg-colgrid">

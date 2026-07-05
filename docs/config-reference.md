@@ -94,11 +94,11 @@ conditionally.
 groups:
   - key: core
     label: Overview
-    fields: [maker, type, description]
-  - key: whip
-    label: Whip Details
-    when: {field: type, eq: Whip}   # only shown when type == "Whip"
-    fields: [whip_type, plait_count]
+    fields: [brand, type, description]
+  - key: saw
+    label: Saw Details
+    when: {field: type, eq: Saw}    # only shown when type == "Saw"
+    fields: [tpi, tooth_pattern]
 ```
 
 - Every field must belong to exactly one group. Fields you don't place are
@@ -110,15 +110,15 @@ groups:
 ## Presets (specialty tables)
 
 A preset is a named, type-scoped table view: a row filter plus a curated
-column set, shown as a tab above the table (All · Whips · Floggers · …).
+column set, shown as a tab above the table (All · Planes · Chisels · Saws · …).
 Selecting one navigates to `?view=table&preset=<key>` — a shareable URL.
 
 ```yaml
 presets:
-  - key: whips                       # snake_case; used in the URL
-    label: Whips                     # tab label
-    filter: {field: type, in: [Whip, Galley Whip, Snake Whip]}   # eq or in
-    columns: [maker, whip_type, plait_count, fall_length, weight]
+  - key: saws                        # snake_case; used in the URL
+    label: Saws                      # tab label
+    filter: {field: type, in: [Saw, Backsaw, Coping Saw]}   # eq or in
+    columns: [maker, type, length, tpi, condition]
 ```
 
 - `filter` uses the same `eq`/`in` form as a group's `when`, and scopes the

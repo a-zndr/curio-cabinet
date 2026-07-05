@@ -118,7 +118,7 @@ SSH.
 ## Docker (anywhere else)
 
 ```bash
-mkdir -p instance && cp examples/impact-toys/collection.yaml instance/collection.yaml
+mkdir -p instance && cp examples/camera-lenses/collection.yaml instance/collection.yaml
 echo "SECRET_KEY=$(python -c 'import secrets;print(secrets.token_urlsafe(32))')" > instance/.env
 
 docker compose -f deploy/docker-compose.yml build

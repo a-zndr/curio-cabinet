@@ -28,24 +28,24 @@ fields:
   - key: kind
     label: Kind
     type: enum
-    values: [Widget, Whip]
+    values: [Widget, Gadget]
     strict: false
   - key: length
     label: Length
     type: number
     unit: {dimension: length, store: cm, display: [cm, in]}
-  - key: plait_count
-    label: Plaits
+  - key: part_count
+    label: Parts
     type: integer
 
 groups:
   - key: core
     label: Core
     fields: [name, kind, length]
-  - key: whip
-    label: Whip Details
-    when: {field: kind, eq: Whip}
-    fields: [plait_count]
+  - key: extras
+    label: Gadget Details
+    when: {field: kind, eq: Gadget}
+    fields: [part_count]
 """
 
 PW = "a sufficiently long password"
@@ -122,8 +122,8 @@ def test_full_item_lifecycle(client):
     # create (with a unit-suffixed measurement)
     resp = client.post(
         "/admin/items/new",
-        data={"csrf_token": csrf, "name": "Test Whip", "kind": "Whip",
-              "length": "6 ft", "plait_count": "12"},
+        data={"csrf_token": csrf, "name": "Test Gadget", "kind": "Gadget",
+              "length": "6 ft", "part_count": "12"},
         follow_redirects=False,
     )
     assert resp.status_code == 302 and "/items/0001/edit" in resp.headers["Location"]
@@ -135,8 +135,8 @@ def test_full_item_lifecycle(client):
     # validation error round-trips with message
     resp = client.post(
         "/admin/items/0001/edit",
-        data={"csrf_token": csrf, "name": "", "kind": "Whip",
-              "length": "abc", "plait_count": ""},
+        data={"csrf_token": csrf, "name": "", "kind": "Gadget",
+              "length": "abc", "part_count": ""},
     )
     body = resp.get_data(as_text=True)
     assert "required" in body and resp.status_code == 200
@@ -164,9 +164,9 @@ def test_full_item_lifecycle(client):
     assert client.get(f"/images/{match.group(1)}/raw").status_code == 404
     assert client.get("/images/AAAA/thumb").status_code == 404
 
-    # public detail page shows the whip group
+    # public detail page shows the conditional group
     detail = client.get("/item/0001").get_data(as_text=True)
-    assert "Test Whip" in detail and "Whip Details" in detail
+    assert "Test Gadget" in detail and "Gadget Details" in detail
 
     # delete
     resp = client.post(

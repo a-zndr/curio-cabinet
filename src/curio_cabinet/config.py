@@ -399,7 +399,7 @@ class GroupSpec:
 @dataclass(frozen=True)
 class PresetSpec:
     """A named "specialty table": a row filter + a curated column set,
-    surfaced as a tab above the table view (e.g. Whips, Floggers)."""
+    surfaced as a tab above the table view (e.g. Primes, Zooms)."""
 
     key: str
     label: str

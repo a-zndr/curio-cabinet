@@ -1,0 +1,106 @@
+# Curio-Cabinet example: a woodworking hand-tool collection.
+# Shows specialty tables (Planes / Chisels / Saws) driven off the `type` field.
+
+collection:
+  title: "Hand Tools"
+  slug: tools
+  id: { strategy: sequential, width: 3 }
+  title_field: name
+  default_sort: { field: maker, order: asc }
+  accent: "#8a5a2b"            # walnut
+
+fields:
+  - key: maker
+    label: Maker
+    type: text
+    required: true
+    suggest: true
+    link: maker_url
+    views: { table: true, card: secondary, filter: multi, pivot: [group] }
+
+  - key: maker_url
+    label: Maker Site
+    type: url
+
+  - key: name
+    label: Name
+    type: text
+    required: true
+    searchable: true
+    views: { table: true }
+
+  - key: type
+    label: Type
+    type: enum
+    values: [Plane, Chisel, Saw, Mallet, Marking Gauge, Other]
+    strict: false
+    views: { table: true, card: secondary, filter: multi, pivot: [group] }
+
+  - key: length
+    label: Length
+    type: number
+    unit: { dimension: length, store: in, display: [in, cm] }
+    views: { table: true, card: secondary, filter: range, pivot: [avg, min, max] }
+
+  - key: blade_width
+    label: Blade Width
+    type: number
+    unit: { dimension: length, store: mm, display: [mm, in] }
+    views: { table: true, filter: range, pivot: [avg] }
+
+  - key: tpi
+    label: TPI
+    type: integer
+    unit: { label: "TPI" }     # teeth-per-inch, for saws
+    views: { filter: range, pivot: [avg] }
+
+  - key: steel
+    label: Materials
+    type: tags
+    views: { card: secondary, filter: multi, pivot: [group] }
+
+  - key: vintage
+    label: Vintage
+    type: boolean
+    views: { filter: multi, pivot: [group] }
+
+  - key: condition
+    label: Condition
+    type: enum
+    values: [New, Good, User, Restoration]
+    strict: false
+    views: { table: true, filter: multi, pivot: [group] }
+
+  - key: acquired
+    label: Acquired
+    type: date
+
+  - key: notes
+    label: Notes
+    type: longtext
+    searchable: true
+
+groups:
+  - key: overview
+    label: Overview
+    fields: [maker, maker_url, name, type, steel]
+  - key: dimensions
+    label: Dimensions
+    fields: [length, blade_width, tpi]
+  - key: history
+    label: Condition & Notes
+    fields: [vintage, condition, acquired, notes]
+
+presets:
+  - key: planes
+    label: Planes
+    filter: { field: type, in: [Plane] }
+    columns: [maker, name, length, blade_width, condition]
+  - key: chisels
+    label: Chisels
+    filter: { field: type, in: [Chisel] }
+    columns: [maker, name, blade_width, steel, condition]
+  - key: saws
+    label: Saws
+    filter: { field: type, in: [Saw] }
+    columns: [maker, name, length, tpi, condition]

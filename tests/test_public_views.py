@@ -151,6 +151,28 @@ def test_share_list_title_not_in_og(client):
     assert "items from Demo" in og
 
 
+def test_share_list_title_is_html_escaped(client):
+    # a <script> title must never render as live markup — Jinja autoescape
+    # turns it into text, so no executable tag reaches the page
+    r = client.get('/list?ids=0001&title=<script>alert(1)</script>')
+    body = r.get_data(as_text=True)
+    assert "<script>alert(1)</script>" not in body
+    assert "&lt;script&gt;" in body  # escaped, shown as literal text
+
+
+def test_clean_title_strips_control_and_bidi_chars():
+    from curio_cabinet.views.public import MAX_TITLE_LEN, _clean_title
+
+    # bidi override (spoofing) + zero-width joiner + newline are removed
+    assert _clean_title("a‮b‍c\n d") == "abc d"
+    # whitespace runs collapse to single spaces, then trimmed
+    assert _clean_title("  lots   of\tspace  ") == "lots of space"
+    # length is capped
+    assert len(_clean_title("x" * 100)) == MAX_TITLE_LEN
+    # non-string / empty input is safe
+    assert _clean_title("") == ""
+
+
 def test_share_list_ignores_hostile_ids(client):
     # non-charset tokens are dropped, valid ones kept
     r = client.get("/list?ids=0001,../../etc/passwd,0002")

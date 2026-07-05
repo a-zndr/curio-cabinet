@@ -8,9 +8,9 @@ table / pivot views, filters, the admin editing forms, image handling, and
 a share-by-link feature. Single-admin authentication, SQLite storage, and
 no Node toolchain — `pip install` and go.
 
-It started as a database of impact toys; the engine knows nothing about
-toys. Point it at a different config and it's a catalog of camera lenses,
-houseplants, vinyl records, or whatever you collect.
+The engine knows nothing about any particular kind of collection. Point it
+at a different config and it's a catalog of camera lenses, mechanical
+keyboards, hand tools, houseplants, vinyl records, or whatever you collect.
 
 ## Features
 
@@ -43,8 +43,9 @@ curio-cabinet create-admin     # create your login
 curio-cabinet run              # dev server at http://127.0.0.1:8080
 ```
 
-Two example configs live in [`examples/`](examples/): the original impact-toys
-collection and a contrasting camera-lens one.
+Three example configs live in [`examples/`](examples/) — camera lenses,
+mechanical keyboards, and hand tools — each showing different field types,
+units, autocomplete, and specialty-table presets.
 
 ## Documentation
 
