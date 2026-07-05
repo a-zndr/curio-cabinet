@@ -38,9 +38,12 @@ Generate a secret: `python -c "import secrets;print(secrets.token_urlsafe(32))"`
 ### 3. Add the daemon and proxy
 
 - **Daemons → Add a Daemon**: command
-  `/home/protected/app/deploy/nfs/run.sh`, user `web`. NFS supervises it and
-  restarts on crash/reboot. The script runs gunicorn in the foreground with a
-  single worker on `127.0.0.1:8099`.
+  `/home/protected/app/deploy/nfs/run.sh`, run as **your member user, not
+  `web`** — the daemon writes the SQLite DB and uploaded images under
+  `/home/protected/data` (owned by you), so a `web` daemon would be read-only
+  and logins/edits would fail. NFS supervises it and restarts on crash/reboot.
+  The script runs gunicorn in the foreground with a single worker on
+  `127.0.0.1:8099`.
 - **Add a Proxy**: protocol HTTP, target port `8099`, path `/`.
 
 ### 4. Seed your data (one-time)

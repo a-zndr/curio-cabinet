@@ -4,7 +4,9 @@
 # Register in the member UI: Site Information -> Daemons -> Add a Daemon
 #   Tag:              curio
 #   Command:          /home/protected/app/deploy/nfs/run.sh
-#   User:             web
+#   User:             your member user (NOT web) — it must write the SQLite DB
+#                     and uploaded images under /home/protected/data, which are
+#                     owned by you. A web-user daemon would be read-only there.
 # Then add a Proxy: Site Information -> Add a Proxy
 #   Protocol HTTP, port 8099, path /
 #
