@@ -32,20 +32,41 @@ Generate a secret: `python -c "import secrets;print(secrets.token_urlsafe(32))"`
   single worker on `127.0.0.1:8099`.
 - **Add a Proxy**: protocol HTTP, target port `8099`, path `/`.
 
-### 4. First-run
+### 4. Seed your data (one-time)
+
+The deploy script ships **code only**, so your existing collection (config +
+database + images) has to go up once. From your Mac, push your local instance
+into `/home/protected/data`, excluding the dev `.env` (the server gets its own):
+
+```bash
+rsync -az --exclude .env \
+    ~/.curio-cabinet/toys/ \
+    you_site@ssh.<region>.nearlyfreespeech.net:/home/protected/data/
+```
+
+Starting fresh instead of migrating an existing collection? Skip this and run
+`curio-cabinet migrate` on the server in the next step to create an empty DB.
+
+After this one-time seed the **server is the source of truth**: deploys carry
+code only, and backups flow back down to your Mac (step 6).
+
+### 5. First-run
 
 ```bash
 ssh you_site@ssh.<region>.nearlyfreespeech.net
 cd /home/protected
 python3 -m venv venv
 venv/bin/pip install -e "app[serve]"        # add ,heic if libheif is available
-CABINET_INSTANCE=/home/protected/data venv/bin/curio-cabinet migrate
-CABINET_INSTANCE=/home/protected/data venv/bin/curio-cabinet create-admin
+export CABINET_INSTANCE=/home/protected/data
+venv/bin/curio-cabinet migrate               # applies any schema drift (no-op on a seeded DB)
+venv/bin/curio-cabinet reset-password        # set a real admin password (the seeded DB carried your local temp one)
 ```
 
-Start the daemon from the UI.
+If you started fresh in step 4 instead of seeding, run `create-admin` here
+rather than `reset-password`. Start the daemon from the UI, then enable TOTP
+from **Settings** once the site is reachable.
 
-### 5. Backups
+### 6. Backups
 
 **Scheduled Tasks → add** `/home/protected/app/deploy/nfs/backup.sh` daily. It
 writes verified, gzipped `VACUUM INTO` snapshots and prunes to 14 daily + 8
@@ -56,7 +77,7 @@ truth):
 rsync -az you_site@ssh.<region>.nearlyfreespeech.net:/home/protected/data/ ~/Backups/curio/
 ```
 
-### 6. Deploys
+### 7. Deploys
 
 From your Mac, after committing code changes:
 
