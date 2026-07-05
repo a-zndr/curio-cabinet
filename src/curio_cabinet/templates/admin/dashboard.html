@@ -1,4 +1,5 @@
 {% extends "admin/_base.html" %}
+{% from "_fields.html" import quick_input %}
 {% block title %}Admin · {{ registry.collection.title }}{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -8,23 +9,76 @@
 
 <p class="muted">{{ count }} items · <a href="{{ url_for('admin.export') }}">Export CSV</a> · <a href="{{ url_for('admin.import_page') }}">Import CSV</a></p>
 
-{% if incomplete is not none %}
-<h2>To finish{% if incomplete %} <span class="todo-count">{{ incomplete|length }}</span>{% endif %}</h2>
-{% if incomplete %}
-<ul class="admin-recent admin-todo">
-  {% for item in incomplete[:30] %}
-  <li>
-    <a href="{{ url_for('admin.item_edit', item_id=item.id) }}">
-      <span class="mono muted">{{ item.id }}</span>
-      {{ item.title }}
-    </a>
-    <span class="todo-missing">{% for m in item.missing %}<span class="todo-chip">{{ m }}</span>{% endfor %}</span>
-  </li>
+{% if maintenance or cleanup or cleanup_photos %}
+<h2>To do</h2>
+
+{# ---- Category 1: Maintenance (date cadences) ---- #}
+{% if maintenance %}
+{% set m_ns = namespace(n=0) %}{% for grp in maintenance %}{% set m_ns.n = m_ns.n + grp.entries|length %}{% endfor %}
+<details class="todo-cat" open>
+  <summary>Maintenance <span class="todo-count">{{ m_ns.n }}</span></summary>
+  {% for grp in maintenance %}
+  <form method="post" action="{{ url_for('admin.maintenance_done') }}" class="todo-group">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="field" value="{{ grp.field.key }}">
+    <div class="todo-group-head">
+      <h3>{{ grp.field.label }} <span class="hint-inline">every {{ grp.field.every_days }} days</span></h3>
+      <div class="todo-done-controls">
+        <input type="date" name="done_date" value="{{ today }}" aria-label="Done on">
+        <button class="btn btn-sm btn-primary" type="submit">Mark done</button>
+      </div>
+    </div>
+    <ul class="todo-list">
+      {% for item in grp.entries %}
+      <li>
+        <label class="chk">
+          <input type="checkbox" name="item_ids" value="{{ item.id }}">
+          <span class="mono muted">{{ item.id }}</span> {{ item.title }}
+        </label>
+        <span class="todo-chip">{{ item.status }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </form>
   {% endfor %}
-</ul>
-{% if incomplete|length > 30 %}<p class="muted">…and {{ incomplete|length - 30 }} more.</p>{% endif %}
-{% else %}
-<p class="muted">Everything's cataloged — nothing missing.</p>
+</details>
+{% endif %}
+
+{# ---- Category 2: Cabinet cleanup (missing must-have data) ---- #}
+{% if cleanup or cleanup_photos %}
+{% set c_ns = namespace(n=cleanup_photos|length) %}{% for grp in cleanup %}{% set c_ns.n = c_ns.n + grp.entries|length %}{% endfor %}
+<details class="todo-cat" open>
+  <summary>Cabinet cleanup <span class="todo-count">{{ c_ns.n }}</span></summary>
+  <p class="hint">Fill a field across everything that's missing it, right here — one value each.</p>
+  {% for grp in cleanup %}
+  <form method="post" action="{{ url_for('admin.cleanup_fill') }}" class="todo-group">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="field" value="{{ grp.field.key }}">
+    <div class="todo-group-head">
+      <h3>Missing {{ grp.field.label }} <span class="todo-count">{{ grp.entries|length }}</span></h3>
+      <button class="btn btn-sm btn-primary" type="submit">Save {{ grp.field.label }}</button>
+    </div>
+    <ul class="todo-list">
+      {% for item in grp.entries %}
+      <li class="todo-fill-row">
+        <a href="{{ url_for('admin.item_edit', item_id=item.id) }}"><span class="mono muted">{{ item.id }}</span> {{ item.title }}</a>
+        {{ quick_input(grp.field, item.id) }}
+      </li>
+      {% endfor %}
+    </ul>
+  </form>
+  {% endfor %}
+  {% if cleanup_photos %}
+  <div class="todo-group">
+    <div class="todo-group-head"><h3>Missing Photo <span class="todo-count">{{ cleanup_photos|length }}</span></h3></div>
+    <ul class="todo-list">
+      {% for item in cleanup_photos %}
+      <li><a href="{{ url_for('admin.item_edit', item_id=item.id) }}"><span class="mono muted">{{ item.id }}</span> {{ item.title }}</a> <span class="hint-inline">add on the item page</span></li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+</details>
 {% endif %}
 {% endif %}
 

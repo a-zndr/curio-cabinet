@@ -51,6 +51,13 @@ Each entry under `fields:`:
                            # whose date is blank or older than this many
                            # days appear on the "To finish" list
                            # (e.g. last_driven: drive every car every 60d)
+  computed: "weight / (length / 100)"
+                           # number/integer only: derive this field from other
+                           # numeric fields with + - * / and parentheses. It
+                           # becomes read-only and recalculates on every save;
+                           # a missing operand or /0 leaves it blank. Run
+                           # `curio-cabinet recompute` once to backfill
+                           # existing rows after adding it.
   default: null            # value used when input is empty (must be valid)
   searchable: false        # text/longtext/tags: included in the ?q= search
   link: some_url_field     # text fields: render as a link to this url field

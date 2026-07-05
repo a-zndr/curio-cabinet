@@ -15,7 +15,10 @@ from typing import Any
 from .config import FieldSpec, FieldType
 from .units import UnitError, parse_measure
 
-__all__ = ["CoercionError", "coerce_value", "coerce_row", "display_value"]
+__all__ = [
+    "CoercionError", "coerce_value", "coerce_row", "apply_computed",
+    "display_value",
+]
 
 _TRUE = {"true", "yes", "y", "1", "on", "x", "✓"}
 _FALSE = {"false", "no", "n", "0", "off", ""}
@@ -168,13 +171,51 @@ def coerce_row(
     values: dict[str, Any] = {}
     errors: dict[str, str] = {}
     for field in fields:
-        if field.key not in raw:
+        # computed fields take no user input; they're filled by apply_computed
+        if field.computed is not None or field.key not in raw:
             continue
         try:
             values[field.key] = coerce_value(field, raw[field.key])
         except CoercionError as exc:
             errors[field.key] = exc.reason
     return values, errors
+
+
+def apply_computed(
+    fields: tuple[FieldSpec, ...], values: dict[str, Any]
+) -> dict[str, Any]:
+    """Fill in each computed field from the other stored values, in place.
+
+    Runs after coercion on every write path (admin save, CSV import,
+    backfill). A missing operand or divide-by-zero yields None (blank),
+    never an error. Number results round to 2 dp, integer to nearest int.
+    """
+    import math
+
+    from .compute import evaluate
+
+    for field in fields:
+        if field.computed is None:
+            continue
+        result = evaluate(field.computed, values)
+        # a non-finite result (overflow, inf/nan) is treated like a missing
+        # operand: a blank cell, never a stored inf/nan or an int() crash
+        if result is None or not math.isfinite(result):
+            values[field.key] = None
+        elif field.type is FieldType.integer:
+            values[field.key] = int(_round_half_up(result, 0))
+        else:
+            values[field.key] = _round_half_up(result, 2)
+    return values
+
+
+def _round_half_up(value: float, ndigits: int) -> float:
+    """Round half away from zero (what people expect and what the migrated
+    data used), not Python's round-half-to-even."""
+    from decimal import ROUND_HALF_UP, Decimal
+
+    q = Decimal(1).scaleb(-ndigits)
+    return float(Decimal(repr(value)).quantize(q, rounding=ROUND_HALF_UP))
 
 
 def display_value(field: FieldSpec, stored: Any) -> str:

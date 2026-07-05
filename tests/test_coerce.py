@@ -99,3 +99,34 @@ def test_display_value():
     assert display_value(BY_KEY["materials"], '["a","b"]') == "a, b"
     assert display_value(BY_KEY["length"], 60.96) == "24 in"  # display[0] is inches
     assert display_value(BY_KEY["name"], None) == ""
+
+
+def test_apply_computed_fills_and_blanks():
+    from curio_cabinet.coerce import apply_computed
+    from curio_cabinet.config import CollectionConfig
+
+    fields = CollectionConfig.from_raw({
+        "collection": {"title": "T", "slug": "things", "title_field": "name",
+                       "default_sort": {"field": "name", "order": "asc"}},
+        "fields": [
+            {"key": "name", "label": "Name", "type": "text", "required": True},
+            {"key": "weight", "label": "Weight", "type": "number"},
+            {"key": "length", "label": "Length", "type": "number"},
+            {"key": "wpm", "label": "W/m", "type": "number",
+             "computed": "weight / (length / 100)"},
+        ],
+        "groups": [{"key": "g", "label": "G",
+                    "fields": ["name", "weight", "length", "wpm"]}],
+    }).fields
+
+    values, errors = coerce_row(fields, {"name": "A", "weight": "343.9", "length": "60"})
+    apply_computed(fields, values)
+    assert errors == {} and values["wpm"] == 573.17
+    # a blank operand yields a blank computed value, never an error
+    v2, _ = coerce_row(fields, {"name": "B", "weight": "100"})
+    apply_computed(fields, v2)
+    assert v2["wpm"] is None
+    # computed fields take no user input even if a value is posted
+    v3, _ = coerce_row(fields, {"name": "C", "weight": "50", "length": "50", "wpm": "999"})
+    apply_computed(fields, v3)
+    assert v3["wpm"] == 100.0

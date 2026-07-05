@@ -281,7 +281,7 @@ def test_admin_nav_on_every_admin_page(client):
 
 def test_dashboard_has_no_todo_section_without_must_haves(client):
     _login(client)
-    assert "To finish" not in client.get("/admin/").get_data(as_text=True)
+    assert "To do" not in client.get("/admin/").get_data(as_text=True)
 
 
 def test_must_have_photos_toggle_from_customize(client):
@@ -297,7 +297,7 @@ def test_must_have_photos_toggle_from_customize(client):
     assert r.status_code == 302
 
     body = client.get("/admin/").get_data(as_text=True)
-    assert "To finish" in body and ">Photo</span>" in body
+    assert "To do" in body and "Missing Photo" in body
 
     client.post(
         "/admin/items/0001/images",
@@ -306,4 +306,4 @@ def test_must_have_photos_toggle_from_customize(client):
         content_type="multipart/form-data",
     )
     body = client.get("/admin/").get_data(as_text=True)
-    assert "todo-chip" not in body and "nothing missing" in body
+    assert "Missing Photo" not in body and "To do" not in body

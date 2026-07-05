@@ -26,7 +26,7 @@ from flask import (
 )
 
 from .. import auth, images
-from ..coerce import coerce_row
+from ..coerce import apply_computed, coerce_row
 from ..csvio import export_csv, import_csv, next_id
 from ..db import utcnow
 
@@ -211,84 +211,168 @@ def logout():
 # Dashboard -------------------------------------------------------------------
 
 
-def _missing_must_haves(row, photo_ids: set) -> list[str]:
-    """Labels of configured must-have data this item still lacks.
-    Must-haves never block a save — they only feed the to-finish list."""
-    missing = []
-    for f in g.registry.fields:
-        if not f.must_have:
-            continue
-        v = row[f.key]
-        if v is None or (isinstance(v, str) and v.strip() in ("", "[]")):
-            missing.append(f.label)
-    if g.registry.collection.must_have_photos and row["id"] not in photo_ids:
-        missing.append("Photo")
-    return missing
-
-
-def _due_maintenance(row) -> list[str]:
-    """Chips for date fields with an every_days cadence that are blank or
-    older than the cadence (e.g. "Last Driven: 75d ago")."""
+def _maintenance_due(rows) -> list[dict]:
+    """Overdue maintenance grouped by date field (every_days set).
+    Each group carries its due items, most-overdue first."""
     import datetime
 
-    today = datetime.date.today()
-    due = []
-    for f in g.registry.fields:
-        if f.every_days is None:
-            continue
-        v = row[f.key]
-        if not v:
-            due.append(f"{f.label}: never")
-            continue
-        try:
-            then = datetime.date.fromisoformat(str(v)[:10])
-        except ValueError:
-            due.append(f"{f.label}: unreadable date")
-            continue
-        days = (today - then).days
-        if days > f.every_days:
-            due.append(f"{f.label}: {days}d ago")
-    return due
-
-
-def _incomplete_items() -> list[dict] | None:
-    """Items missing must-have data or overdue on a maintenance date,
-    or None when neither is configured."""
     reg = g.registry
-    configured = (
-        any(f.must_have or f.every_days for f in reg.fields)
-        or reg.collection.must_have_photos
-    )
-    if not configured:
-        return None
-    photo_ids = {
-        r["item_id"] for r in g.db.execute('SELECT DISTINCT "item_id" FROM images')
-    }
-    out = []
-    for row in g.db.execute(f'SELECT * FROM "{reg.table}" ORDER BY "id"'):
-        missing = _missing_must_haves(row, photo_ids) + _due_maintenance(row)
-        if missing:
-            out.append({
-                "id": row["id"],
-                "title": row[reg.collection.title_field],
-                "missing": missing,
-            })
-    return out
+    title = reg.collection.title_field
+    today = datetime.date.today()
+    groups = []
+    for f in (f for f in reg.fields if f.every_days is not None):
+        items = []
+        for row in rows:
+            v = row[f.key]
+            if not v:
+                items.append({"id": row["id"], "title": row[title],
+                              "status": "never", "rank": 10 ** 9})
+                continue
+            try:
+                then = datetime.date.fromisoformat(str(v)[:10])
+            except ValueError:
+                items.append({"id": row["id"], "title": row[title],
+                              "status": "bad date", "rank": 10 ** 9 - 1})
+                continue
+            days = (today - then).days
+            if days > f.every_days:
+                items.append({"id": row["id"], "title": row[title],
+                              "status": f"{days}d ago", "rank": days})
+        if items:
+            items.sort(key=lambda x: -x["rank"])
+            groups.append({"field": f, "entries": items})
+    return groups
+
+
+def _cleanup_groups(rows, photo_ids) -> tuple[list[dict], list[dict]]:
+    """Items missing must-have data, grouped for inline batch entry:
+    one group per must-have field, plus a photos-missing list."""
+    reg = g.registry
+    title = reg.collection.title_field
+    field_groups = []
+    for f in (f for f in reg.fields if f.must_have and f.computed is None):
+        items = [
+            {"id": r["id"], "title": r[title]} for r in rows
+            if r[f.key] is None or (isinstance(r[f.key], str)
+                                    and r[f.key].strip() in ("", "[]"))
+        ]
+        if items:
+            field_groups.append({"field": f, "entries": items})
+    photo_items = []
+    if reg.collection.must_have_photos:
+        photo_items = [
+            {"id": r["id"], "title": r[title]} for r in rows
+            if r["id"] not in photo_ids
+        ]
+    return field_groups, photo_items
 
 
 @bp.get("/")
 def dashboard():
-    table = g.registry.table
+    reg = g.registry
+    table = reg.table
     (count,) = g.db.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()
     recent = g.db.execute(
         f'SELECT * FROM "{table}" ORDER BY "updated_at" DESC LIMIT 8'
     ).fetchall()
+    rows = g.db.execute(f'SELECT * FROM "{table}" ORDER BY "id"').fetchall()
+    photo_ids = {
+        r["item_id"] for r in g.db.execute('SELECT DISTINCT "item_id" FROM images')
+    }
+    import datetime
+
+    maintenance = _maintenance_due(rows)
+    cleanup, cleanup_photos = _cleanup_groups(rows, photo_ids)
     return render_template(
         "admin/dashboard.html",
         count=count,
         recent=recent,
-        incomplete=_incomplete_items(),
+        maintenance=maintenance,
+        cleanup=cleanup,
+        cleanup_photos=cleanup_photos,
+        today=datetime.date.today().isoformat(),
     )
+
+
+@bp.post("/maintenance/done")
+def maintenance_done():
+    """Mark a maintenance date field as done (a chosen date) on one or more
+    items at once — the "done + when" action on the dashboard."""
+    from ..coerce import CoercionError, coerce_value
+
+    reg = g.registry
+    field = reg.by_key.get(request.form.get("field", ""))
+    if field is None or field.every_days is None:
+        abort(400)
+    ids = request.form.getlist("item_ids")
+    date_raw = request.form.get("done_date", "").strip()
+    if not ids:
+        flash("Select at least one item to mark done.", "error")
+        return redirect(url_for("admin.dashboard"))
+    try:
+        value = coerce_value(field, date_raw)
+    except CoercionError:
+        value = None
+    if not value:
+        flash("Pick a valid date.", "error")
+        return redirect(url_for("admin.dashboard"))
+    marks = ", ".join("?" for _ in ids)
+    g.db.execute(
+        f'UPDATE "{reg.table}" SET {reg.quoted(field.key)} = ?, "updated_at" = ? '
+        f'WHERE "id" IN ({marks})',
+        [value, utcnow(), *ids],
+    )
+    g.db.commit()
+    flash(f"Marked {field.label} done on {len(ids)} item(s).")
+    return redirect(url_for("admin.dashboard"))
+
+
+@bp.post("/cleanup/fill")
+def cleanup_fill():
+    """Fill one missing field across several items from the dashboard —
+    per-item values (not a single bulk value), recomputing derived fields."""
+    from ..coerce import CoercionError, apply_computed, coerce_value
+
+    reg = g.registry
+    field = reg.by_key.get(request.form.get("field", ""))
+    if field is None or field.computed is not None:
+        abort(400)
+    saved, errors = 0, []
+    for form_key, raw_val in request.form.items():
+        if not form_key.startswith("val__"):
+            continue
+        item_id, raw_val = form_key[len("val__"):], raw_val.strip()
+        if not raw_val:
+            continue
+        try:
+            value = coerce_value(field, raw_val)
+        except CoercionError as exc:
+            errors.append(f"{item_id}: {exc.reason}")
+            continue
+        row = g.db.execute(
+            f'SELECT * FROM "{reg.table}" WHERE "id" = ?', (item_id,)
+        ).fetchone()
+        if row is None:
+            continue
+        merged = dict(row)
+        merged[field.key] = value
+        apply_computed(reg.fields, merged)  # keep derived fields consistent
+        cols = {field.key: value}
+        for cf in reg.fields:
+            if cf.computed is not None:
+                cols[cf.key] = merged[cf.key]
+        sets = ", ".join(f"{reg.quoted(k)} = ?" for k in cols)
+        g.db.execute(
+            f'UPDATE "{reg.table}" SET {sets}, "updated_at" = ? WHERE "id" = ?',
+            [*cols.values(), utcnow(), item_id],
+        )
+        saved += 1
+    g.db.commit()
+    if errors:
+        flash("; ".join(errors[:5]), "error")
+    if saved:
+        flash(f"Updated {field.label} on {saved} item(s).")
+    return redirect(url_for("admin.dashboard"))
 
 
 # Item CRUD --------------------------------------------------------------------
@@ -298,7 +382,8 @@ def _form_raw() -> dict:
     """Collect raw form values for every registered field."""
     raw = {}
     for f in g.registry.fields:
-        raw[f.key] = request.form.get(f.key, "")
+        if f.computed is None:
+            raw[f.key] = request.form.get(f.key, "")
     return raw
 
 
@@ -348,6 +433,7 @@ def item_new():
         raw = _form_raw()
         values, errors = coerce_row(g.registry.fields, raw)
         if not errors:
+            apply_computed(g.registry.fields, values)
             item_id = next_id(g.db, g.registry)
             cols = ["id", *values.keys(), "created_at", "updated_at"]
             quoted = ", ".join(f'"{c}"' for c in cols)
@@ -375,6 +461,7 @@ def item_edit(item_id: str):
         raw = _form_raw()
         values, errors = coerce_row(g.registry.fields, raw)
         if not errors:
+            apply_computed(g.registry.fields, values)
             sets = ", ".join(f'{g.registry.quoted(k)} = ?' for k in values)
             g.db.execute(
                 f'UPDATE "{g.registry.table}" SET {sets}, "updated_at" = ? '

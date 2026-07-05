@@ -104,7 +104,7 @@ def test_must_have_never_blocks_a_save(client):
     assert r.status_code == 302  # saved fine
 
 
-def test_incomplete_items_listed_with_missing_chips(client):
+def test_missing_fields_grouped_under_cabinet_cleanup(client):
     import datetime
 
     csrf = _login(client)
@@ -118,12 +118,11 @@ def test_incomplete_items_listed_with_missing_chips(client):
     })
 
     body = client.get("/admin/").get_data(as_text=True)
-    assert "To finish" in body
-    # only "Bare" is incomplete: two chips (Kind, Weight), photos not required
-    assert body.count("todo-chip") == 2
-    assert ">Kind</span>" in body and ">Weight</span>" in body
-    todo_block = body.split("To finish")[1].split("Recently updated")[0]
-    assert "Bare" in todo_block and "Complete" not in todo_block
+    assert "To do" in body and "Cabinet cleanup" in body
+    # one group per missing must-have field, listing only the incomplete item
+    assert "Missing Kind" in body and "Missing Weight" in body
+    cleanup = body.split("Cabinet cleanup")[1].split("Recently updated")[0]
+    assert "Bare" in cleanup and "Complete" not in cleanup
 
 
 def test_todo_clears_when_data_is_filled_in(client):
@@ -136,14 +135,16 @@ def test_todo_clears_when_data_is_filled_in(client):
         "last_driven": datetime.date.today().isoformat(),
     })
     body = client.get("/admin/").get_data(as_text=True)
-    assert "todo-chip" not in body
-    assert "nothing missing" in body  # designed empty state
+    assert "To do" not in body  # nothing outstanding -> the section disappears
 
 
 def test_customize_field_checkbox_round_trip(client):
+    import datetime
+
     csrf = _login(client)
     client.post("/admin/items/new", data={
         "csrf_token": csrf, "name": "Bare", "kind": "Widget", "weight": "5",
+        "last_driven": datetime.date.today().isoformat(),
     })
     # check Notes as must-have too (form posts every checked box; kind/weight
     # stay checked, so they survive; an absent box would clear the flag)
@@ -152,14 +153,13 @@ def test_customize_field_checkbox_round_trip(client):
         "musthave__kind": "on", "musthave__weight": "on", "musthave__notes": "on",
     })
     assert r.status_code == 302
-    body = client.get("/admin/").get_data(as_text=True)
-    assert ">Notes</span>" in body and body.count("todo-chip") == 1
+    assert "Missing Notes" in client.get("/admin/").get_data(as_text=True)
 
-    # uncheck notes again -> item is complete
+    # uncheck notes again -> notes no longer tracked
     client.post("/admin/customize/fields", data={
         "csrf_token": csrf, "musthave__kind": "on", "musthave__weight": "on",
     })
-    assert "todo-chip" not in client.get("/admin/").get_data(as_text=True)
+    assert "Missing Notes" not in client.get("/admin/").get_data(as_text=True)
 
 
 def _add(client, csrf, **extra):
@@ -205,11 +205,11 @@ def test_maintenance_dates_feed_the_todo_list(client):
     _add(client, csrf)                       # 0003: never driven
 
     body = client.get("/admin/").get_data(as_text=True)
-    assert "Last Driven: 100d ago" in body
-    assert "Last Driven: never" in body
-    todo_block = body.split("To finish")[1].split("Recently updated")[0]
-    assert "0002" in todo_block and "0003" in todo_block
-    assert "0001" not in todo_block  # driven recently, nothing due
+    todo = body.split("To do")[1].split("Recently updated")[0]
+    assert "Maintenance" in todo and "Last Driven" in todo
+    assert "100d ago" in todo and "never" in todo
+    assert "0002" in todo and "0003" in todo
+    assert "0001" not in todo  # driven recently, nothing due
 
 
 def test_marking_preset_column_private_strips_it_and_stops_the_leak(client):
@@ -250,3 +250,54 @@ def test_marking_searchable_field_private_saves_cleanly(client):
     body = r.get_data(as_text=True)
     assert "Field settings saved" in body
     assert 'name="private__notes" checked' in body
+
+
+def test_maintenance_done_sets_date_on_selected_items(client):
+    csrf = _login(client)
+    _add(client, csrf)  # 0001, no last_driven -> "never"
+    _add(client, csrf)  # 0002, no last_driven -> "never"
+    r = client.post("/admin/maintenance/done", data={
+        "csrf_token": csrf, "field": "last_driven",
+        "done_date": "2026-07-05", "item_ids": ["0001", "0002"],
+    }, follow_redirects=True)
+    assert "Marked Last Driven done on 2 item(s)" in r.get_data(as_text=True)
+    body = client.get("/admin/").get_data(as_text=True)
+    assert "Last Driven" not in body.split("Recently updated")[0]  # both cleared
+
+
+def test_maintenance_done_rejects_non_maintenance_field(client):
+    csrf = _login(client)
+    _add(client, csrf)
+    r = client.post("/admin/maintenance/done", data={
+        "csrf_token": csrf, "field": "weight",  # not an every_days field
+        "done_date": "2026-07-05", "item_ids": ["0001"],
+    })
+    assert r.status_code == 400
+
+
+def test_cleanup_fill_updates_each_item_individually(client):
+    csrf = _login(client)
+    driven = "2026-07-05"
+    # two items missing weight (kind set so only weight is missing)
+    client.post("/admin/items/new", data={
+        "csrf_token": csrf, "name": "A", "kind": "Widget", "last_driven": driven})
+    client.post("/admin/items/new", data={
+        "csrf_token": csrf, "name": "B", "kind": "Widget", "last_driven": driven})
+    r = client.post("/admin/cleanup/fill", data={
+        "csrf_token": csrf, "field": "weight",
+        "val__0001": "10", "val__0002": "20",
+    }, follow_redirects=True)
+    assert "Updated Weight on 2 item(s)" in r.get_data(as_text=True)
+    assert "Missing Weight" not in client.get("/admin/").get_data(as_text=True)
+
+
+def test_cleanup_fill_reports_bad_value_and_skips_it(client):
+    csrf = _login(client)
+    client.post("/admin/items/new", data={
+        "csrf_token": csrf, "name": "A", "kind": "Widget",
+        "last_driven": "2026-07-05"})
+    r = client.post("/admin/cleanup/fill", data={
+        "csrf_token": csrf, "field": "weight", "val__0001": "not-a-number",
+    }, follow_redirects=True)
+    body = r.get_data(as_text=True)
+    assert "0001" in body and "Missing Weight" in body  # still outstanding

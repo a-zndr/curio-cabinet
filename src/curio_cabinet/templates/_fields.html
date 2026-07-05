@@ -29,13 +29,36 @@
   {%- endif -%}
 {%- endmacro %}
 
+{# Compact type-appropriate input for the dashboard "Cabinet cleanup" batch
+   editor. Name is val__<item_id>; coercion happens server-side. #}
+{% macro quick_input(field, item_id) -%}
+  {%- set n = 'val__' ~ item_id -%}
+  {%- if field.type.value == 'boolean' -%}
+    <select name="{{ n }}"><option value="">—</option><option value="true">Yes</option><option value="false">No</option></select>
+  {%- elif field.type.value == 'enum' -%}
+    <select name="{{ n }}"><option value="">—</option>{% for opt in field.values %}<option value="{{ opt }}">{{ opt }}</option>{% endfor %}</select>
+  {%- elif field.type.value == 'date' -%}
+    <input type="date" name="{{ n }}">
+  {%- elif field.type.value in ('number', 'integer') -%}
+    <input type="text" inputmode="decimal" name="{{ n }}"
+           placeholder="{{ field.unit.display[0] if field.unit and field.unit.display else (field.unit.label if field.unit else '') }}">
+  {%- else -%}
+    <input type="text" name="{{ n }}">
+  {%- endif -%}
+{%- endmacro %}
+
 {% macro field_input(field, raw, errors, suggestions={}) -%}
   {%- set v = raw.get(field.key) -%}
   {%- set v = '' if v is none else v -%}
   <div class="form-field {% if errors.get(field.key) %}has-error{% endif %}">
     <label for="f-{{ field.key }}">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
 
-    {%- if field.type.value == 'longtext' -%}
+    {%- if field.computed -%}
+      {# derived value — no input; recalculated on every save #}
+      <input id="f-{{ field.key }}" type="text" value="{{ '' if v is none or v == '' else v }}" readonly disabled>
+      <p class="field-hint">Computed: <code>{{ field.computed }}</code></p>
+
+    {%- elif field.type.value == 'longtext' -%}
       <textarea id="f-{{ field.key }}" name="{{ field.key }}" rows="3">{{ v }}</textarea>
 
     {%- elif field.type.value == 'boolean' -%}

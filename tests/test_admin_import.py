@@ -198,3 +198,38 @@ def test_utf16_bom_upload_decodes(client):
     body = resp.get_data(as_text=True)
     assert "ready to import" in body
     assert "Windows-1252" not in body  # decoded properly, no mojibake note
+
+
+def test_csv_import_fills_computed_fields():
+    # computed fields must be populated on import (regression: apply_computed
+    # was imported but never called)
+    import tempfile
+    from pathlib import Path
+
+    from curio_cabinet.config import CollectionConfig
+    from curio_cabinet.csvio import import_csv
+    from curio_cabinet.db import connect, ensure_engine_tables
+    from curio_cabinet.registry import FieldRegistry
+    from curio_cabinet.schema import rebuild
+
+    cfg = CollectionConfig.from_raw({
+        "collection": {"title": "T", "slug": "things", "title_field": "name",
+                       "default_sort": {"field": "name", "order": "asc"}},
+        "fields": [
+            {"key": "name", "label": "Name", "type": "text", "required": True},
+            {"key": "weight", "label": "Weight", "type": "number"},
+            {"key": "length", "label": "Length", "type": "number"},
+            {"key": "wpm", "label": "W/m", "type": "number",
+             "computed": "weight / (length / 100)"},
+        ],
+        "groups": [{"key": "g", "label": "G",
+                    "fields": ["name", "weight", "length", "wpm"]}],
+    })
+    reg = FieldRegistry(cfg)
+    conn = connect(Path(tempfile.mkdtemp()) / "t.db")
+    ensure_engine_tables(conn)
+    rebuild(conn, reg)
+    report = import_csv(conn, reg, "name,weight,length\nA,343.9,60\n")
+    assert report.imported == 1
+    (wpm,) = conn.execute('SELECT wpm FROM things').fetchone()
+    assert wpm == 573.17

@@ -248,6 +248,8 @@ class FieldSpec:
     private: bool = False              # admin-only: never rendered publicly
     every_days: int | None = None      # date fields: maintenance cadence; a
                                        # blank/stale date lands on the to-finish list
+    computed: str | None = None        # number/integer: arithmetic over other
+                                       # fields, e.g. "weight / (length / 100)"
     default: Any = None
     searchable: bool = False
     suggest: bool = False              # text fields: admin form offers existing values
@@ -264,8 +266,8 @@ class FieldSpec:
         _reject_unknown(
             raw,
             {"key", "label", "type", "required", "must_have", "private",
-             "every_days", "default", "searchable", "suggest", "unit", "link",
-             "values", "strict", "rename_from", "views"},
+             "every_days", "computed", "default", "searchable", "suggest", "unit",
+             "link", "values", "strict", "rename_from", "views"},
             "field",
         )
         key = _str(raw, "key", "field")
@@ -294,6 +296,7 @@ class FieldSpec:
             must_have=_bool(raw, "must_have", ctx),
             private=_bool(raw, "private", ctx),
             every_days=raw.get("every_days"),
+            computed=_str(raw, "computed", ctx, required=False),
             default=raw.get("default"),
             searchable=_bool(raw, "searchable", ctx),
             suggest=_bool(raw, "suggest", ctx),
@@ -323,6 +326,16 @@ class FieldSpec:
             if not isinstance(spec.every_days, int) or isinstance(spec.every_days, bool) \
                     or spec.every_days < 1:
                 raise ValueError(f"{ctx}: every_days must be a positive integer")
+        if spec.computed is not None:
+            from .compute import ComputeError, validate_expr
+            if spec.type not in (FieldType.number, FieldType.integer):
+                raise ValueError(f"{ctx}: computed only applies to number/integer")
+            if spec.required:
+                raise ValueError(f"{ctx}: a computed field cannot be required")
+            try:
+                validate_expr(spec.computed)
+            except ComputeError as exc:
+                raise ValueError(f"{ctx}: {exc}") from None
         if spec.private:
             if spec.searchable:
                 raise ValueError(f"{ctx}: a private field cannot be searchable")
@@ -632,6 +645,25 @@ def _validate(
                 raise ValueError(
                     f"field {f.key!r}: link target {f.link!r} is private"
                 )
+        if f.computed is not None:
+            from .compute import field_refs
+            for ref in field_refs(f.computed):
+                if ref == f.key:
+                    raise ValueError(f"field {f.key!r}: formula references itself")
+                dep = by_key.get(ref)
+                if dep is None:
+                    raise ValueError(
+                        f"field {f.key!r}: formula references unknown field {ref!r}"
+                    )
+                if dep.type not in (FieldType.number, FieldType.integer):
+                    raise ValueError(
+                        f"field {f.key!r}: formula references non-numeric field {ref!r}"
+                    )
+                if dep.computed is not None:
+                    raise ValueError(
+                        f"field {f.key!r}: formula references computed field {ref!r} "
+                        "(computed fields can't depend on each other)"
+                    )
 
     grouped: dict[str, str] = {}
     for g in groups:

@@ -14,7 +14,7 @@ import re
 import sqlite3
 from dataclasses import dataclass, field
 
-from .coerce import coerce_row
+from .coerce import apply_computed, coerce_row
 from .config import FieldType
 from .db import utcnow
 from .registry import FieldRegistry
@@ -136,6 +136,8 @@ def import_csv(
             # checks and defaults run for every field on every row
             raw = {f.key: cells.get(f.key, "") for f in registry.fields}
             values, errors = coerce_row(registry.fields, raw)
+            if not errors:
+                apply_computed(registry.fields, values)
             if explicit_id:
                 if not _ID_RE.match(explicit_id):
                     errors["id"] = "ids may only use letters, digits, - and _"

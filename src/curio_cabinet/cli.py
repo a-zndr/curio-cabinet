@@ -173,6 +173,45 @@ def migrate(ctx: click.Context, force: bool) -> None:
     click.echo(f"migrated: {drift.describe()}")
 
 
+@main.command()
+@click.pass_context
+def recompute(ctx: click.Context) -> None:
+    """Recalculate every computed field for all existing items.
+
+    Write paths keep computed fields current automatically; run this once
+    after adding a `computed:` field to backfill rows created before it.
+    """
+    from .coerce import apply_computed
+    from .db import utcnow
+
+    inst = _instance(ctx)
+    computed = [f for f in inst.registry.fields if f.computed is not None]
+    if not computed:
+        click.echo("no computed fields configured")
+        return
+    conn = _open(inst)
+    reg = inst.registry
+    changed = 0
+    for row in conn.execute(f'SELECT * FROM "{reg.table}"').fetchall():
+        values = dict(row)
+        before = {f.key: values.get(f.key) for f in computed}
+        apply_computed(reg.fields, values)
+        after = {f.key: values.get(f.key) for f in computed}
+        if before != after:
+            sets = ", ".join(f'{reg.quoted(k)} = ?' for k in after)
+            conn.execute(
+                f'UPDATE "{reg.table}" SET {sets}, "updated_at" = ? WHERE "id" = ?',
+                [*after.values(), utcnow(), row["id"]],
+            )
+            changed += 1
+    conn.commit()
+    (total,) = conn.execute(f'SELECT COUNT(*) FROM "{reg.table}"').fetchone()
+    click.echo(
+        f"recomputed {len(computed)} field(s) across {total} items; "
+        f"{changed} row(s) changed"
+    )
+
+
 @main.command("import-csv")
 @click.argument("path", type=click.Path(exists=True, dir_okay=False))
 @click.option("--dry-run", is_flag=True)
