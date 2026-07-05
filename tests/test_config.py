@@ -94,6 +94,37 @@ def test_table_defaults_off():
     assert not by_key["count"].in_table
 
 
+def test_presets_validated():
+    raw = _raw()
+    raw["presets"] = [
+        {"key": "whips", "label": "Whips",
+         "filter": {"field": "kind", "in": ["Widget"]},
+         "columns": ["name", "length"]},
+    ]
+    config = make_config(raw)
+    assert config.presets[0].filter_values() == ("Widget",)
+
+    bad_col = _raw()
+    bad_col["presets"] = [{"key": "x", "label": "X",
+                           "filter": {"field": "kind", "eq": "Widget"},
+                           "columns": ["nope"]}]
+    with pytest.raises(Exception, match="unknown column"):
+        make_config(bad_col)
+
+    bad_field = _raw()
+    bad_field["presets"] = [{"key": "x", "label": "X",
+                             "filter": {"field": "nope", "eq": "Widget"},
+                             "columns": ["name"]}]
+    with pytest.raises(Exception, match="unknown field"):
+        make_config(bad_field)
+
+
+def test_example_config_has_presets():
+    config = load_config(REPO / "examples" / "impact-toys" / "collection.yaml")
+    keys = {p.key for p in config.presets}
+    assert {"whips", "floggers"} <= keys
+
+
 def test_config_sha_stable_and_schema_sensitive():
     a, b = make_config(), make_config()
     assert a.sha() == b.sha()

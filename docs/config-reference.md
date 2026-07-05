@@ -21,6 +21,7 @@ collection:
 
 fields:  [ ... ]             # see below
 groups:  [ ... ]             # detail-page + admin-form sections
+presets: [ ... ]             # optional "specialty tables" (see below)
 ```
 
 ## Fields
@@ -105,6 +106,27 @@ groups:
 - `when` supports `eq` (equals) or `in` (one of a list). It controls only
   detail/form visibility — a conditional field still participates in the
   table, filters, and pivot like any other column.
+
+## Presets (specialty tables)
+
+A preset is a named, type-scoped table view: a row filter plus a curated
+column set, shown as a tab above the table (All · Whips · Floggers · …).
+Selecting one navigates to `?view=table&preset=<key>` — a shareable URL.
+
+```yaml
+presets:
+  - key: whips                       # snake_case; used in the URL
+    label: Whips                     # tab label
+    filter: {field: type, in: [Whip, Galley Whip, Snake Whip]}   # eq or in
+    columns: [maker, whip_type, plait_count, fall_length, weight]
+```
+
+- `filter` uses the same `eq`/`in` form as a group's `when`, and scopes the
+  rows (it pre-selects those values in the filter panel too).
+- `columns` lists the fields to show, in order. Any field is allowed; the
+  in-browser column picker still works on top and keeps the preset scope.
+- Presets are view-only — they never touch the schema, so adding or editing
+  one takes effect immediately with no migration.
 
 ## Rethemeing
 

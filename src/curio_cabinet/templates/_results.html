@@ -51,6 +51,19 @@
     {% endif %}
 
   {% elif view == 'table' %}
+    {% if registry.presets %}
+      <div class="preset-tabs" role="tablist" aria-label="Specialty tables">
+        <a class="preset-tab {{ 'is-active' if not active_preset }}" role="tab"
+           href="?view=table" hx-get="?view=table" hx-target="#results"
+           hx-select="#results" hx-swap="outerHTML" hx-push-url="true">All</a>
+        {% for p in registry.presets %}
+          <a class="preset-tab {{ 'is-active' if active_preset == p.key }}" role="tab"
+             href="?view=table&amp;preset={{ p.key }}"
+             hx-get="?view=table&amp;preset={{ p.key }}" hx-target="#results"
+             hx-select="#results" hx-swap="outerHTML" hx-push-url="true">{{ p.label }}</a>
+        {% endfor %}
+      </div>
+    {% endif %}
     {% if rows %}
       <div class="table-scroll">
         <table class="data-table">
@@ -99,6 +112,7 @@
         <form method="get" hx-get="{{ url_for('public.index') }}" hx-target="#results"
               hx-select="#results" hx-swap="outerHTML" hx-push-url="true">
           <input type="hidden" name="view" value="table">
+          {% if active_preset %}<input type="hidden" name="preset" value="{{ active_preset }}">{% endif %}
           {% for f in registry.fields if f.in_detail %}
             <label class="col-opt">
               <input type="checkbox" name="col" value="{{ f.key }}"

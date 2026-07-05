@@ -34,6 +34,12 @@ fields:
     unit: {dimension: length, store: cm, display: [in, cm]}
     views: {table: true, card: secondary, filter: range, pivot: [avg]}
 
+presets:
+  - key: acme
+    label: Acme
+    filter: {field: maker, eq: Acme}
+    columns: [name, length]
+
 groups:
   - key: core
     label: Core
@@ -167,6 +173,33 @@ def test_image_route_rejects_bad_input(client):
     assert client.get("/images/nothex/thumb").status_code == 404
     assert client.get("/images/" + "a" * 64 + "/evil").status_code == 404
     assert client.get("/images/" + "a" * 64 + "/thumb").status_code == 404  # valid shape, no file
+
+
+def test_preset_scopes_rows_and_marks_active(client):
+    r = client.get("/?view=table&preset=acme")
+    body = r.get_data(as_text=True)
+    assert "Alpha" in body and "Beta" in body and "Gamma" not in body
+    assert "2 items" in body
+    # the preset tab is rendered active
+    assert 'preset-tab is-active' in body
+
+
+def test_preset_only_applies_in_table_view(client):
+    # cards view ignores preset scoping (presets are a table feature)
+    r = client.get("/?view=cards&preset=acme")
+    assert "3 items" in r.get_data(as_text=True)
+
+
+def test_col_override_keeps_preset_scope(client):
+    r = client.get("/?view=table&preset=acme&col=name")
+    body = r.get_data(as_text=True)
+    assert "Gamma" not in body  # still scoped to Acme
+    assert "2 items" in body
+
+
+def test_unknown_preset_is_ignored(client):
+    r = client.get("/?view=table&preset=bogus")
+    assert "3 items" in r.get_data(as_text=True)  # no scoping
 
 
 def test_theme_css_served(client):

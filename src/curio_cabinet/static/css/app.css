@@ -545,6 +545,28 @@ thead .col-sticky { z-index: 4; }
 .col-sticky img { border-radius: var(--radius-sm); object-fit: cover; }
 .cell-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+.preset-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+.preset-tab {
+  padding: 4px 12px;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+}
+.preset-tab:hover { background: var(--surface-raised); text-decoration: none; color: var(--text); }
+.preset-tab.is-active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 560;
+}
+
 .column-picker { margin-top: var(--space-3); font-size: var(--text-sm); }
 .column-picker summary { cursor: pointer; color: var(--text-muted); }
 .column-picker form { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-3); }

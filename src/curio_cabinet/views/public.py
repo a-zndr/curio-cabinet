@@ -8,6 +8,8 @@ records the real, shareable URL — refresh and back-button work.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from flask import (
     Blueprint,
     abort,
@@ -56,6 +58,19 @@ def _browse_context():
     registry = g.registry
     params = parse_params(registry, request.args)
     view = _view_mode()
+
+    # Specialty tables: a preset scopes the rows (its filter) and picks the
+    # columns. Only meaningful in table view.
+    preset = registry.preset(request.args.get("preset")) if view == "table" else None
+    if preset is not None:
+        field = preset.filter.field
+        merged = dict(params.multi)
+        existing = merged.get(field, ())
+        merged[field] = tuple(existing) + tuple(
+            v for v in preset.filter_values() if v not in existing
+        )
+        params = replace(params, multi=merged)
+
     total = count_items(g.db, registry, params)
 
     ctx = {
@@ -65,6 +80,7 @@ def _browse_context():
         "options": filter_options(g.db, registry),
         "args": request.args,
         "query_string": request.query_string.decode(),
+        "active_preset": preset.key if preset else None,
     }
 
     if view == "pivot":
@@ -93,11 +109,15 @@ def _browse_context():
         rows = g.db.execute(sql, binds).fetchall()
         ctx.update(rows=rows, thumbs=_primary_images(rows))
         if view == "table":
-            requested = request.args.getlist("col")
-            valid = [c for c in requested if c in registry.by_key]
-            ctx["columns"] = [
-                registry.by_key[c] for c in (valid or registry.table_default_keys)
-            ]
+            # column precedence: explicit ?col= > preset columns > defaults
+            requested = [c for c in request.args.getlist("col") if c in registry.by_key]
+            if requested:
+                keys = requested
+            elif preset is not None:
+                keys = list(preset.columns)
+            else:
+                keys = list(registry.table_default_keys)
+            ctx["columns"] = [registry.by_key[c] for c in keys]
     return ctx
 
 

@@ -255,6 +255,32 @@ class GroupSpec(BaseModel):
     when: WhenSpec | None = None
 
 
+class PresetSpec(BaseModel):
+    """A named "specialty table": a row filter + a curated column set,
+    surfaced as a tab above the table view (e.g. Whips, Floggers)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    key: str
+    label: str
+    filter: WhenSpec
+    columns: tuple[str, ...]
+
+    @field_validator("key")
+    @classmethod
+    def _key_shape(cls, v: str) -> str:
+        import re
+
+        if not re.fullmatch(r"[a-z][a-z0-9_]*", v):
+            raise ValueError(f"preset key {v!r} must be snake_case")
+        return v
+
+    def filter_values(self) -> tuple[str, ...]:
+        if self.filter.eq is not None:
+            return (str(self.filter.eq),)
+        return tuple(str(v) for v in (self.filter.in_ or ()))
+
+
 class IdSpec(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -297,6 +323,7 @@ class CollectionConfig(BaseModel):
     collection: CollectionMeta
     fields: tuple[FieldSpec, ...]
     groups: tuple[GroupSpec, ...] = ()
+    presets: tuple[PresetSpec, ...] = ()
 
     @model_validator(mode="after")
     def _cross_checks(self) -> "CollectionConfig":
@@ -330,6 +357,24 @@ class CollectionConfig(BaseModel):
                 grouped[key] = g.key
             if g.when and g.when.field not in by_key:
                 raise ValueError(f"group {g.key!r}: when references unknown field")
+
+        preset_keys: set[str] = set()
+        for p in self.presets:
+            if p.key in preset_keys:
+                raise ValueError(f"duplicate preset key: {p.key!r}")
+            preset_keys.add(p.key)
+            if p.filter.field not in by_key:
+                raise ValueError(
+                    f"preset {p.key!r}: filter references unknown field "
+                    f"{p.filter.field!r}"
+                )
+            if not p.columns:
+                raise ValueError(f"preset {p.key!r}: needs at least one column")
+            for col in p.columns:
+                if col not in by_key:
+                    raise ValueError(
+                        f"preset {p.key!r}: unknown column {col!r}"
+                    )
 
         # Every field must render somewhere: ungrouped fields go to an
         # implicit trailing "Other" group so they can never be invisible.

@@ -140,6 +140,18 @@ fields:
     searchable: true
     views: { card: secondary }
 
+# Specialty tables — type-scoped views with curated columns, shown as tabs
+# above the table. Add more (e.g. Canes, Paddles) the same way.
+presets:
+  - key: whips
+    label: Whips
+    filter: { field: type, in: [Whip, Galley Whip, Signal Whip, Snake Whip, Bullwhip] }
+    columns: [maker, whip_type, length, plait_count, fall_count, fall_length, weight, rear_balance]
+  - key: floggers
+    label: Floggers
+    filter: { field: type, eq: Flogger }
+    columns: [maker, length, weight, materials, fall_count, balance_point]
+
 groups:
   - key: core
     label: Overview

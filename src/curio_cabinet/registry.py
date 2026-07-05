@@ -34,6 +34,15 @@ class FieldRegistry:
     def groups(self) -> tuple[GroupSpec, ...]:
         return self.config.groups
 
+    @cached_property
+    def presets(self):
+        return self.config.presets
+
+    def preset(self, key: str | None):
+        if not key:
+            return None
+        return next((p for p in self.presets if p.key == key), None)
+
     # View-facing subsets -------------------------------------------------
 
     @cached_property
