@@ -128,8 +128,17 @@
               <label class="chk" title="Only visible to you — hidden from every public page"><input type="checkbox" name="private__{{ k }}" {{ 'checked' if f.private }}> Private</label>
             {% endif %}
             {% if f.type.value == 'date' %}
-              <label class="chk" title="Blank or older dates appear on the dashboard's To finish list">Remind every
+              <label class="chk" title="Blank or older dates appear on the To-Dos list">Remind every
                 <input type="number" name="everydays__{{ k }}" value="{{ f.every_days or '' }}" min="1" class="cfg-days"> days</label>
+              <label class="chk" title="Leave blank to remind for every item; or scope to a type">only when
+                <select name="ewfield__{{ k }}">
+                  <option value="">any item</option>
+                  {% for gf in registry.pivot_group_fields %}
+                    <option value="{{ gf.key }}" {{ 'selected' if f.every_days_when and f.every_days_when.field == gf.key }}>{{ gf.label }}</option>
+                  {% endfor %}
+                </select>
+                is <input name="ewvalues__{{ k }}" placeholder="Whip, Galley Whip"
+                          value="{{ (f.every_days_when.in_ or [f.every_days_when.eq]) | join(', ') if f.every_days_when else '' }}"></label>
             {% endif %}
           </div>
           {% if f.type.value == 'enum' %}

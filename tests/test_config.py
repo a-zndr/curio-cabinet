@@ -212,3 +212,31 @@ def test_private_cannot_be_title_link_target_or_preset_column():
                        "columns": ["secret"]}]
     with pytest.raises(Exception, match="private"):
         make_config(raw)
+
+
+def test_every_days_when_scopes_cadence():
+    raw = _raw()
+    raw["fields"].append({"key": "last_cond", "label": "Last Conditioned",
+                          "type": "date", "every_days": 120,
+                          "every_days_when": {"field": "kind", "in": ["Widget"]}})
+    config = make_config(raw)
+    f = next(f for f in config.fields if f.key == "last_cond")
+    assert f.every_days == 120
+    assert f.every_days_when.field == "kind"
+    assert f.every_days_when.matches({"kind": "Widget"})
+    assert not f.every_days_when.matches({"kind": "Gadget"})
+
+    # every_days_when without every_days is rejected
+    bad = _raw()
+    bad["fields"].append({"key": "x", "label": "X", "type": "date",
+                          "every_days_when": {"field": "kind", "in": ["Widget"]}})
+    with pytest.raises(Exception, match="every_days"):
+        make_config(bad)
+
+    # unknown condition field is rejected
+    bad2 = _raw()
+    bad2["fields"].append({"key": "y", "label": "Y", "type": "date",
+                           "every_days": 30,
+                           "every_days_when": {"field": "nope", "in": ["Z"]}})
+    with pytest.raises(Exception, match="unknown field"):
+        make_config(bad2)

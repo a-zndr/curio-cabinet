@@ -51,6 +51,9 @@ Each entry under `fields:`:
                            # whose date is blank or older than this many
                            # days appear on the "To finish" list
                            # (e.g. last_driven: drive every car every 60d)
+  every_days_when:         # optional: scope the cadence to matching items
+    field: type            # (e.g. condition only the whips, not everything).
+    in: [Whip, Snake Whip] # same eq/in shape as a group's `when`.
   computed: "weight / (length / 100)"
                            # number/integer only: derive this field from other
                            # numeric fields with + - * / and parentheses. It

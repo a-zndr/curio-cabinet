@@ -248,6 +248,8 @@ class FieldSpec:
     private: bool = False              # admin-only: never rendered publicly
     every_days: int | None = None      # date fields: maintenance cadence; a
                                        # blank/stale date lands on the to-finish list
+    every_days_when: "WhenSpec | None" = None  # scope the cadence to matching
+                                       # items only (e.g. type in [Whip])
     computed: str | None = None        # number/integer: arithmetic over other
                                        # fields, e.g. "weight / (length / 100)"
     default: Any = None
@@ -266,8 +268,8 @@ class FieldSpec:
         _reject_unknown(
             raw,
             {"key", "label", "type", "required", "must_have", "private",
-             "every_days", "computed", "default", "searchable", "suggest", "unit",
-             "link", "values", "strict", "rename_from", "views"},
+             "every_days", "every_days_when", "computed", "default", "searchable",
+             "suggest", "unit", "link", "values", "strict", "rename_from", "views"},
             "field",
         )
         key = _str(raw, "key", "field")
@@ -296,6 +298,9 @@ class FieldSpec:
             must_have=_bool(raw, "must_have", ctx),
             private=_bool(raw, "private", ctx),
             every_days=raw.get("every_days"),
+            every_days_when=(WhenSpec.from_raw(raw["every_days_when"],
+                                               f"{ctx}.every_days_when")
+                             if raw.get("every_days_when") is not None else None),
             computed=_str(raw, "computed", ctx, required=False),
             default=raw.get("default"),
             searchable=_bool(raw, "searchable", ctx),
@@ -326,6 +331,8 @@ class FieldSpec:
             if not isinstance(spec.every_days, int) or isinstance(spec.every_days, bool) \
                     or spec.every_days < 1:
                 raise ValueError(f"{ctx}: every_days must be a positive integer")
+        if spec.every_days_when is not None and spec.every_days is None:
+            raise ValueError(f"{ctx}: every_days_when needs every_days set")
         if spec.computed is not None:
             from .compute import ComputeError, validate_expr
             if spec.type not in (FieldType.number, FieldType.integer):
@@ -645,6 +652,11 @@ def _validate(
                 raise ValueError(
                     f"field {f.key!r}: link target {f.link!r} is private"
                 )
+        if f.every_days_when is not None and f.every_days_when.field not in by_key:
+            raise ValueError(
+                f"field {f.key!r}: every_days_when references unknown field "
+                f"{f.every_days_when.field!r}"
+            )
         if f.computed is not None:
             from .compute import field_refs
             for ref in field_refs(f.computed):

@@ -364,3 +364,42 @@ def test_view_switch_marks_active_with_seg_class(client):
     # the active view uses the real segmented-control class, not a phantom one
     assert 'class="seg is-active"' in body
     assert "seg-btn" not in body
+
+
+def test_maintenance_cadence_scoped_to_matching_items(client, app):
+    # last_driven scoped to kind==Gadget: only gadgets appear on that schedule
+    from curio_cabinet import configio
+    csrf = _login(client)
+    inst = app.config["CABINET_INSTANCE"]
+    raw = configio.load_raw(inst)
+    for f in raw["fields"]:
+        if f["key"] == "last_driven":
+            f["every_days_when"] = {"field": "kind", "in": ["Gadget"]}
+    app.config["CABINET_INSTANCE"] = configio.apply_config(inst, raw)
+
+    client.post("/admin/items/new", data={"csrf_token": csrf, "name": "AWidget", "kind": "Widget"})
+    client.post("/admin/items/new", data={"csrf_token": csrf, "name": "AGadget", "kind": "Gadget"})
+    body = client.get("/admin/todos").get_data(as_text=True)
+    assert "AGadget" in body      # a gadget: on the Last Driven schedule
+    assert "AWidget" not in body  # a widget: excluded by the condition
+
+
+def test_customize_saves_maintenance_condition(client, app):
+    # set "Last Driven, remind every 90 days, only when kind is Gadget" via the
+    # Customize fields form, then confirm the scope takes effect on To-Dos
+    csrf = _login(client)
+    r = client.post("/admin/customize/fields", data={
+        "csrf_token": csrf, "tab": "fields",
+        "everydays__last_driven": "90",
+        "ewfield__last_driven": "kind", "ewvalues__last_driven": "Gadget",
+    })
+    assert r.status_code == 302
+    client.post("/admin/items/new", data={"csrf_token": csrf, "name": "GadgetOne", "kind": "Gadget"})
+    client.post("/admin/items/new", data={"csrf_token": csrf, "name": "WidgetOne", "kind": "Widget"})
+    body = client.get("/admin/todos").get_data(as_text=True)
+    assert "GadgetOne" in body and "WidgetOne" not in body
+    # clearing the cadence drops the condition too (no orphan every_days_when)
+    from curio_cabinet import configio
+    raw = configio.load_raw(app.config["CABINET_INSTANCE"])
+    ld = next(f for f in raw["fields"] if f["key"] == "last_driven")
+    assert ld.get("every_days") == 90 and ld.get("every_days_when", {}).get("field") == "kind"

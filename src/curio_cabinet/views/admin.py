@@ -229,6 +229,10 @@ def _maintenance_schedule(rows) -> list[dict]:
     for f in (f for f in reg.fields if f.every_days is not None):
         entries = []
         for row in rows:
+            # a cadence can be scoped to matching items only (e.g. condition
+            # only the whips): items outside the condition aren't on this schedule
+            if f.every_days_when is not None and not f.every_days_when.matches(dict(row)):
+                continue
             v = row[f.key]
             last = due = None
             if v:
@@ -1018,8 +1022,19 @@ def _update_field_views(f: dict, key: str) -> None:
         days = request.form.get(f"everydays__{key}", "").strip()
         if days.isdecimal() and int(days) > 0:
             f["every_days"] = int(days)
+            # optional: scope the cadence to items matching a condition
+            cond_field = request.form.get(f"ewfield__{key}", "").strip()
+            cond_vals = [
+                v.strip() for v in
+                request.form.get(f"ewvalues__{key}", "").split(",") if v.strip()
+            ]
+            if cond_field and cond_vals:
+                f["every_days_when"] = {"field": cond_field, "in": cond_vals}
+            else:
+                f.pop("every_days_when", None)
         else:
             f.pop("every_days", None)
+            f.pop("every_days_when", None)
     if ftype in ("text", "longtext", "tags"):
         f["searchable"] = f"search__{key}" in request.form
     if ftype == "text":
