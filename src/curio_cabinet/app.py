@@ -92,9 +92,12 @@ def create_app(instance_root: str | None = None) -> Flask:
 
     @app.before_request
     def _open_db() -> None:
-        g.inst = inst
-        g.registry = inst.registry
-        g.db = connect(inst.db_path, journal_mode=inst.journal_mode)
+        # read the instance from app.config so a live config edit (Customize)
+        # can hot-swap it in-process without a restart
+        current = app.config["CABINET_INSTANCE"]
+        g.inst = current
+        g.registry = current.registry
+        g.db = connect(current.db_path, journal_mode=current.journal_mode)
 
     @app.teardown_request
     def _close_db(exc: BaseException | None) -> None:

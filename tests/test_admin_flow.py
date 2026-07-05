@@ -228,6 +228,34 @@ def test_logout(client):
     assert client.get("/admin/").status_code == 302  # back to login
 
 
+def test_customize_general_live(app, client):
+    csrf = _login(client)
+    r = client.post("/admin/customize/general", data={
+        "csrf_token": csrf, "title": "My Cabinet",
+        "title_field": "name", "sort_field": "name", "sort_order": "asc",
+        "accent_hue": "210",
+    })
+    assert r.status_code == 302
+    # change is live immediately (config hot-swapped, no restart)
+    assert "My Cabinet" in client.get("/").get_data(as_text=True)
+
+
+def test_customize_add_field_live(app, client):
+    csrf = _login(client)
+    r = client.post("/admin/customize/field/new", data={
+        "csrf_token": csrf, "key": "color", "label": "Colorway", "type": "text",
+        "group": "core",
+    })
+    assert r.status_code == 302
+    # new field is usable on the edit form right away
+    form = client.get("/admin/items/new").get_data(as_text=True)
+    assert 'name="color"' in form and "Colorway" in form
+
+
+def test_customize_requires_login(client):
+    assert client.get("/admin/customize").status_code == 302  # -> login
+
+
 def test_security_headers_present(client):
     resp = client.get("/")
     assert "default-src 'self'" in resp.headers["Content-Security-Policy"]

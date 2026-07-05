@@ -851,3 +851,38 @@ body.panel-open { overflow: hidden; }
 /* Share dialog fields */
 .share-name { display: block; font-size: var(--text-sm); font-weight: 550; margin-top: var(--space-3); }
 .share-dialog input[type="text"] { margin: var(--space-1) 0 0; }
+
+/* Customize (live config editor) -------------------------------------------- */
+.hue-row { display: flex; align-items: center; gap: var(--space-3); }
+.hue-swatch {
+  width: 34px; height: 34px; flex: none;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: oklch(0.6 0.13 var(--accent-hue));
+}
+.hue-row input[type="range"] { flex: 1; }
+.hue-presets { display: flex; gap: var(--space-2); margin-top: var(--space-2); }
+.hue-chip { width: 22px; height: 22px; padding: 0; border-radius: 50%; border: 1px solid var(--border-strong); cursor: pointer; }
+
+.cfg-fields { display: flex; flex-direction: column; gap: var(--space-3); }
+.cfg-field { border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-3); background: var(--surface); }
+.cfg-field-head { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; margin-bottom: var(--space-2); }
+.cfg-label { max-width: 260px; font-weight: 600; }
+.cfg-key { color: var(--text-faint); font-size: var(--text-xs); }
+.cfg-toggles { display: flex; flex-wrap: wrap; gap: var(--space-3) var(--space-4); align-items: center; font-size: var(--text-sm); }
+.cfg-toggles .chk, .cfg-toggles .sel { display: inline-flex; align-items: center; gap: 6px; color: var(--text-muted); }
+.cfg-toggles select { width: auto; min-width: 0; padding: 4px 8px; font-size: var(--text-sm); }
+.cfg-values { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-3); font-size: var(--text-sm); }
+.cfg-values input { max-width: 340px; }
+
+input[type="checkbox"], input[type="radio"] { width: auto; }
+
+.cfg-presets { list-style: none; padding: 0; margin: 0 0 var(--space-3); }
+.cfg-presets li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) 0; border-bottom: 1px solid var(--border); font-size: var(--text-sm); }
+.cfg-add { margin-top: var(--space-2); }
+.cfg-add > summary { display: inline-flex; list-style: none; cursor: pointer; }
+.cfg-add > summary::-webkit-details-marker { display: none; }
+.cfg-add form { margin-top: var(--space-4); }
+.cfg-cols { grid-column: 1 / -1; }
+.cfg-colgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px; margin-top: var(--space-1); }
+.cfg-colgrid .chk { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-sm); font-weight: 400; }

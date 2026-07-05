@@ -428,4 +428,29 @@
     });
   }
   document.addEventListener("DOMContentLoaded", initAutofill);
+
+  // Customize page: live accent-hue preview (sets the CSS var app-wide as you
+  // drag, so the whole page previews the color) + preset swatches.
+  function bindHue() {
+    var input = document.querySelector("[data-hue-input]");
+    if (!input) return;
+    var apply = function () {
+      document.documentElement.style.setProperty("--accent-hue", input.value);
+    };
+    if (!input.dataset.bound) {
+      input.dataset.bound = "1";
+      input.addEventListener("input", apply);
+    }
+    apply();
+    document.querySelectorAll("[data-hue-preset]").forEach(function (btn) {
+      btn.style.background = "oklch(0.6 0.13 " + btn.dataset.huePreset + ")";
+      if (btn.dataset.bound) return;
+      btn.dataset.bound = "1";
+      btn.addEventListener("click", function () {
+        input.value = btn.dataset.huePreset;
+        apply();
+      });
+    });
+  }
+  document.addEventListener("DOMContentLoaded", bindHue);
 })();

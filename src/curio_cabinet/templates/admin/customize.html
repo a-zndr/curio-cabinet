@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+{% block title %}Customize · {{ registry.collection.title }}{% endblock %}
+{% block nav %}<a href="{{ url_for('admin.dashboard') }}">Admin</a>{% endblock %}
+{% block main_class %}page{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Customize</h1></div>
+<p class="muted">Changes apply immediately and are saved to your config (a backup is kept each time). Adding a field also updates the database. Removing, renaming, or retyping a field stays a command-line operation.</p>
+
+{# ---- General ---- #}
+<section class="form-group">
+  <h2>General</h2>
+  <form method="post" action="{{ url_for('admin.customize_general') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="form-grid">
+      <div class="form-field">
+        <label for="cz-title">Collection name</label>
+        <input id="cz-title" name="title" value="{{ registry.collection.title }}">
+      </div>
+      <div class="form-field">
+        <label for="cz-titlefield">Headline field</label>
+        <select id="cz-titlefield" name="title_field">
+          {% for f in registry.fields %}
+            <option value="{{ f.key }}" {{ 'selected' if f.key == registry.collection.title_field }}>{{ f.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-field">
+        <label for="cz-sortfield">Default sort</label>
+        <div class="input-unit">
+          <select id="cz-sortfield" name="sort_field">
+            {% for f in registry.fields if f.sortable %}
+              <option value="{{ f.key }}" {{ 'selected' if f.key == registry.collection.default_sort.field }}>{{ f.label }}</option>
+            {% endfor %}
+          </select>
+          <select name="sort_order">
+            <option value="asc" {{ 'selected' if registry.collection.default_sort.order == 'asc' }}>A→Z / low→high</option>
+            <option value="desc" {{ 'selected' if registry.collection.default_sort.order == 'desc' }}>Z→A / high→low</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-field">
+        <label for="cz-hue">Accent color</label>
+        <div class="hue-row">
+          <span class="hue-swatch" data-hue-swatch></span>
+          <input id="cz-hue" type="range" min="0" max="360" step="1"
+                 name="accent_hue" value="{{ registry.collection.accent_hue if registry.collection.accent_hue is not none else 45 }}"
+                 data-hue-input>
+        </div>
+        <div class="hue-presets">
+          {% for h in [45, 15, 145, 250, 300, 200] %}
+            <button type="button" class="hue-chip" data-hue-preset="{{ h }}" aria-label="hue {{ h }}"></button>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    <button class="btn btn-primary" type="submit">Save general</button>
+  </form>
+</section>
+
+{# ---- Fields ---- #}
+<section class="form-group">
+  <h2>Fields</h2>
+  <p class="hint">Rename fields and choose where each one appears. (To add, remove, or change a field's type, see below / the CLI.)</p>
+  <form method="post" action="{{ url_for('admin.customize_fields') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="cfg-fields">
+      {% for f in registry.fields %}
+        {% set k = f.key %}
+        <div class="cfg-field">
+          <div class="cfg-field-head">
+            <input class="cfg-label" name="label__{{ k }}" value="{{ f.label }}" aria-label="Label for {{ f.key }}">
+            <span class="cfg-key mono">{{ f.key }} · {{ f.type.value }}</span>
+          </div>
+          <div class="cfg-toggles">
+            <label class="chk"><input type="checkbox" name="table__{{ k }}" {{ 'checked' if f.in_table }}> Table</label>
+            <label class="chk"><input type="checkbox" name="detail__{{ k }}" {{ 'checked' if f.in_detail }}> Detail</label>
+            <label class="sel">Card
+              <select name="card__{{ k }}">
+                {% for c in ['hidden', 'secondary', 'primary'] %}
+                  <option value="{{ c }}" {{ 'selected' if f.card_slot == c }}>{{ c|capitalize }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label class="sel">Filter
+              <select name="filter__{{ k }}">
+                <option value="none" {{ 'selected' if f.filter_kind == 'none' }}>None</option>
+                {% if f.type.value in ('enum', 'tags', 'boolean', 'text') %}
+                  <option value="multi" {{ 'selected' if f.filter_kind == 'multi' }}>Checkboxes</option>
+                {% endif %}
+                {% if f.type.value in ('number', 'integer') %}
+                  <option value="range" {{ 'selected' if f.filter_kind == 'range' }}>Range</option>
+                {% endif %}
+              </select>
+            </label>
+            {% if f.type.value in ('text', 'longtext', 'tags') %}
+              <label class="chk"><input type="checkbox" name="search__{{ k }}" {{ 'checked' if f.searchable }}> Search</label>
+            {% endif %}
+            {% if f.type.value == 'text' %}
+              <label class="chk"><input type="checkbox" name="suggest__{{ k }}" {{ 'checked' if f.suggest }}> Autocomplete</label>
+            {% endif %}
+            {% if f.type.value in ('enum', 'tags', 'boolean', 'number', 'integer') %}
+              <label class="chk"><input type="checkbox" name="pivot__{{ k }}" {{ 'checked' if f.pivot_ops }}> Analytics</label>
+            {% endif %}
+          </div>
+          {% if f.type.value == 'enum' %}
+            <label class="cfg-values">Options <input name="values__{{ k }}" value="{{ f.values|join(', ') }}" placeholder="comma, separated"></label>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+    <div class="form-actions"><button class="btn btn-primary" type="submit">Save fields</button></div>
+  </form>
+</section>
+
+{# ---- Sections (groups) ---- #}
+<section class="form-group">
+  <h2>Sections</h2>
+  <p class="hint">Section headings on the detail page and edit form.</p>
+  <form method="post" action="{{ url_for('admin.customize_groups') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="form-grid">
+      {% for grp in registry.groups %}
+        <div class="form-field">
+          <label for="cz-grp-{{ grp.key }}">{{ grp.key }}</label>
+          <input id="cz-grp-{{ grp.key }}" name="grouplabel__{{ grp.key }}" value="{{ grp.label }}">
+        </div>
+      {% endfor %}
+    </div>
+    <button class="btn btn-primary" type="submit">Save sections</button>
+  </form>
+</section>
+
+{# ---- Specialty tables (presets) ---- #}
+<section class="form-group">
+  <h2>Specialty tables</h2>
+  {% if registry.presets %}
+    <ul class="cfg-presets">
+      {% for p in registry.presets %}
+        <li>
+          <span><strong>{{ p.label }}</strong> — {{ p.filter.field }} in {{ p.filter_values()|join(', ') }} · {{ p.columns|length }} columns</span>
+          <form method="post" action="{{ url_for('admin.customize_delete_preset', pkey=p.key) }}"
+                data-confirm="Remove the “{{ p.label }}” table?">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="btn btn-sm btn-danger" type="submit">Remove</button>
+          </form>
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+  <details class="cfg-add">
+    <summary class="btn btn-sm">Add a specialty table</summary>
+    <form method="post" action="{{ url_for('admin.customize_add_preset') }}" class="form-grid">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="form-field"><label>Name</label><input name="label" placeholder="Whips"></div>
+      <div class="form-field"><label>Key</label><input name="key" placeholder="whips"></div>
+      <div class="form-field">
+        <label>Filter field</label>
+        <select name="filter_field">
+          {% for f in registry.pivot_group_fields %}<option value="{{ f.key }}">{{ f.label }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-field"><label>Filter values <span class="hint-inline">(comma-separated)</span></label><input name="filter_values" placeholder="Whip, Snake Whip"></div>
+      <div class="form-field cfg-cols">
+        <label>Columns</label>
+        <div class="cfg-colgrid">
+          {% for f in registry.fields if f.key != registry.collection.title_field %}
+            <label class="chk"><input type="checkbox" name="columns" value="{{ f.key }}"> {{ f.label }}</label>
+          {% endfor %}
+        </div>
+      </div>
+      <div><button class="btn btn-primary" type="submit">Add table</button></div>
+    </form>
+  </details>
+</section>
+
+{# ---- Add field ---- #}
+<section class="form-group">
+  <h2>Add a field</h2>
+  <p class="hint">Adds a new column to your collection (a safe, additive change — a backup is taken first).</p>
+  <details class="cfg-add">
+    <summary class="btn btn-sm">New field</summary>
+    <form method="post" action="{{ url_for('admin.customize_add_field') }}" class="form-grid">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="form-field"><label>Label</label><input name="label" placeholder="Color"></div>
+      <div class="form-field"><label>Key <span class="hint-inline">(snake_case)</span></label><input name="key" placeholder="color"></div>
+      <div class="form-field">
+        <label>Type</label>
+        <select name="type">
+          {% for t in ['text', 'longtext', 'number', 'integer', 'boolean', 'enum', 'tags', 'url', 'date'] %}
+            <option value="{{ t }}">{{ t }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-field">
+        <label>Section</label>
+        <select name="group">
+          {% for grp in registry.groups %}<option value="{{ grp.key }}">{{ grp.label }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-field">
+        <label>Unit <span class="hint-inline">(number types)</span></label>
+        <div class="input-unit">
+          <select name="dim">
+            <option value="">—</option>
+            <option value="length">length</option>
+            <option value="mass">mass</option>
+          </select>
+          <input name="store" placeholder="store (cm, g)">
+        </div>
+        <input name="unit_label" placeholder="or a label like %, g/m">
+      </div>
+      <div class="form-field"><label>Options <span class="hint-inline">(enum, comma-separated)</span></label><input name="values" placeholder="New, Used, Worn"></div>
+      <div><button class="btn btn-primary" type="submit">Add field</button></div>
+    </form>
+  </details>
+</section>
+{% endblock %}

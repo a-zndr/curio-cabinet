@@ -484,3 +484,188 @@ def export():
             "Content-Disposition": f"attachment; filename={g.registry.table}.csv"
         },
     )
+
+
+# Customize (live config editor) ------------------------------------------------
+
+_GROUP_TYPES = ("enum", "tags", "boolean", "text")
+_NUM_TYPES = ("number", "integer")
+
+
+def _apply(new_raw: dict, ok_msg: str):
+    from .. import configio
+
+    try:
+        new_inst = configio.apply_config(g.inst, new_raw)
+    except configio.ConfigEditError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("admin.customize"))
+    current_app.config["CABINET_INSTANCE"] = new_inst
+    flash(ok_msg)
+    return redirect(url_for("admin.customize"))
+
+
+def _raw():
+    from .. import configio
+
+    return configio.load_raw(g.inst)
+
+
+@bp.get("/customize")
+def customize():
+    from .. import configio
+
+    return render_template("admin/customize.html", raw=configio.load_raw(g.inst))
+
+
+@bp.post("/customize/general")
+def customize_general():
+    raw = _raw()
+    c = raw.setdefault("collection", {})
+    title = request.form.get("title", "").strip()
+    if title:
+        c["title"] = title
+    hue = request.form.get("accent_hue", "").strip()
+    if hue == "":
+        c.pop("accent_hue", None)
+    else:
+        try:
+            c["accent_hue"] = int(float(hue))
+        except ValueError:
+            pass
+    tf = request.form.get("title_field")
+    if tf:
+        c["title_field"] = tf
+    sf = request.form.get("sort_field")
+    if sf:
+        c["default_sort"] = {
+            "field": sf,
+            "order": "desc" if request.form.get("sort_order") == "desc" else "asc",
+        }
+    return _apply(raw, "Collection settings saved")
+
+
+def _update_field_views(f: dict, key: str) -> None:
+    ftype = f.get("type")
+    views = dict(f.get("views") or {})
+    views["table"] = f"table__{key}" in request.form
+    views["detail"] = f"detail__{key}" in request.form
+    card = request.form.get(f"card__{key}")
+    if card in ("primary", "secondary", "hidden"):
+        views["card"] = card
+    filt = request.form.get(f"filter__{key}")
+    if filt in ("none", "multi", "range"):
+        views["filter"] = filt
+    # analytics: toggle the field's participation, preserving existing ops
+    pivot = list(views.get("pivot") or [])
+    want = f"pivot__{key}" in request.form
+    if ftype in _GROUP_TYPES:
+        if want and "group" not in pivot:
+            pivot.append("group")
+        elif not want:
+            pivot = [p for p in pivot if p != "group"]
+    elif ftype in _NUM_TYPES:
+        aggs = [p for p in pivot if p in ("avg", "min", "max", "sum")]
+        if want and not aggs:
+            pivot.append("avg")
+        elif not want:
+            pivot = [p for p in pivot if p not in ("avg", "min", "max", "sum")]
+    if pivot:
+        views["pivot"] = pivot
+    else:
+        views.pop("pivot", None)
+    f["views"] = views
+    if ftype in ("text", "longtext", "tags"):
+        f["searchable"] = f"search__{key}" in request.form
+    if ftype == "text":
+        f["suggest"] = f"suggest__{key}" in request.form
+    if ftype == "enum":
+        vals = [v.strip() for v in request.form.get(f"values__{key}", "").split(",") if v.strip()]
+        if vals:
+            f["values"] = vals
+
+
+@bp.post("/customize/fields")
+def customize_fields():
+    raw = _raw()
+    for f in raw.get("fields", []):
+        key = f.get("key")
+        if not key:
+            continue
+        lbl = request.form.get(f"label__{key}", "").strip()
+        if lbl:
+            f["label"] = lbl
+        _update_field_views(f, key)
+    return _apply(raw, "Field settings saved")
+
+
+@bp.post("/customize/groups")
+def customize_groups():
+    raw = _raw()
+    for gp in raw.get("groups", []):
+        lbl = request.form.get(f"grouplabel__{gp.get('key')}", "").strip()
+        if lbl:
+            gp["label"] = lbl
+    return _apply(raw, "Section names saved")
+
+
+@bp.post("/customize/field/new")
+def customize_add_field():
+    raw = _raw()
+    key = request.form.get("key", "").strip().lower()
+    label = request.form.get("label", "").strip()
+    ftype = request.form.get("type", "text")
+    if not key or not label:
+        flash("A new field needs both a key and a label.", "error")
+        return redirect(url_for("admin.customize"))
+
+    newf: dict = {"key": key, "label": label, "type": ftype}
+    if ftype in _NUM_TYPES:
+        dim = request.form.get("dim", "")
+        store = request.form.get("store", "").strip()
+        unit_label = request.form.get("unit_label", "").strip()
+        if dim and store:
+            newf["unit"] = {"dimension": dim, "store": store}
+        elif unit_label:
+            newf["unit"] = {"label": unit_label}
+    if ftype == "enum":
+        newf["values"] = [
+            v.strip() for v in request.form.get("values", "").split(",") if v.strip()
+        ]
+    raw.setdefault("fields", []).append(newf)
+
+    groups = raw.setdefault("groups", [])
+    target = request.form.get("group", "")
+    gp = next((x for x in groups if x.get("key") == target), None)
+    if gp is None and groups:
+        gp = groups[0]
+    if gp is not None:
+        gp.setdefault("fields", []).append(key)
+    return _apply(raw, f"Added field “{label}”")
+
+
+@bp.post("/customize/presets/add")
+def customize_add_preset():
+    raw = _raw()
+    key = request.form.get("key", "").strip().lower()
+    label = request.form.get("label", "").strip()
+    field = request.form.get("filter_field", "")
+    values = [v.strip() for v in request.form.get("filter_values", "").split(",") if v.strip()]
+    columns = request.form.getlist("columns")
+    if not key or not label or not field or not values or not columns:
+        flash("A specialty table needs a name, a filter, and at least one column.", "error")
+        return redirect(url_for("admin.customize"))
+    preset = {
+        "key": key, "label": label,
+        "filter": {"field": field, "in": values},
+        "columns": columns,
+    }
+    raw.setdefault("presets", []).append(preset)
+    return _apply(raw, f"Added specialty table “{label}”")
+
+
+@bp.post("/customize/presets/<pkey>/delete")
+def customize_delete_preset(pkey: str):
+    raw = _raw()
+    raw["presets"] = [p for p in raw.get("presets", []) if p.get("key") != pkey]
+    return _apply(raw, "Specialty table removed")

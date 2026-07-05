@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Admin · {{ registry.collection.title }}{% endblock %}
 {% block nav %}
+  <a href="{{ url_for('admin.customize') }}">Customize</a>
   <a href="{{ url_for('admin.settings') }}">Settings</a>
   <form method="post" action="{{ url_for('admin.logout') }}" class="inline-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
