@@ -245,6 +245,7 @@ class FieldSpec:
     required: bool = False
     default: Any = None
     searchable: bool = False
+    suggest: bool = False              # text fields: admin form offers existing values
     unit: UnitSpec | None = None
     link: str | None = None            # text fields: render as link to this url field
     values: tuple[str, ...] = ()       # enum only
@@ -257,8 +258,8 @@ class FieldSpec:
         raw = _mapping(raw, "field")
         _reject_unknown(
             raw,
-            {"key", "label", "type", "required", "default", "searchable", "unit",
-             "link", "values", "strict", "rename_from", "views"},
+            {"key", "label", "type", "required", "default", "searchable", "suggest",
+             "unit", "link", "values", "strict", "rename_from", "views"},
             "field",
         )
         key = _str(raw, "key", "field")
@@ -286,6 +287,7 @@ class FieldSpec:
             required=_bool(raw, "required", ctx),
             default=raw.get("default"),
             searchable=_bool(raw, "searchable", ctx),
+            suggest=_bool(raw, "suggest", ctx),
             unit=unit,
             link=_str(raw, "link", ctx, required=False),
             values=values,
@@ -304,6 +306,8 @@ class FieldSpec:
             FieldType.text, FieldType.longtext, FieldType.tags
         ):
             raise ValueError(f"{ctx}: searchable only applies to text-like fields")
+        if spec.suggest and spec.type is not FieldType.text:
+            raise ValueError(f"{ctx}: suggest only applies to text fields")
         return spec
 
     # Effective view settings (per-type defaults applied) -----------------

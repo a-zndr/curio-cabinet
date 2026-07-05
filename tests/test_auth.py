@@ -115,6 +115,18 @@ def test_totp_enrollment_and_verify(admin):
     assert auth.verify_totp(admin, _user(admin), future)
 
 
+def test_verify_totp_with_session_row(admin):
+    # regression: login_totp passes the session-join row (which has no `id`
+    # key — it's aliased) to verify_totp; resolving the user id must not crash.
+    totp = _enroll(admin)
+    uid = _user(admin)["id"]
+    token, _ = auth.create_session(admin, uid, stage="pre_totp")
+    row = auth.session_by_token(admin, token, stage="pre_totp")
+    assert "id" not in row.keys()  # session row has user_id/uid, not id
+    code = totp.at(int(dt.datetime.now().timestamp()) + 30)
+    assert auth.verify_totp(admin, row, code)
+
+
 def test_totp_replay_rejected(admin):
     totp = _enroll(admin)
     code = totp.at(int(dt.datetime.now().timestamp()) + 30)

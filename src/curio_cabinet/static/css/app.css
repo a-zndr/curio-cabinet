@@ -786,3 +786,12 @@ body.panel-open { overflow: hidden; }
 @media (max-width: 767px) {
   .browse-main { padding-bottom: 72px; }
 }
+
+/* Mobile: clear the fixed bottom bar so the footer (Admin link) isn't hidden */
+@media (max-width: 767px) {
+  body { padding-bottom: calc(60px + env(safe-area-inset-bottom)); }
+}
+
+/* Share dialog fields */
+.share-name { display: block; font-size: var(--text-sm); font-weight: 550; margin-top: var(--space-3); }
+.share-dialog input[type="text"] { margin: var(--space-1) 0 0; }

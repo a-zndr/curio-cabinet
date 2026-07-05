@@ -231,7 +231,7 @@ def share_list():
         rows = [dict(found[i]) for i in ids if i in found]  # preserve URL order
         missing = len(ids) - len(rows)
 
-    title = (request.args.get("title", "") or "").strip()[:80]
+    title = (request.args.get("title", "") or "").strip()[:30]
     return render_template(
         "list.html",
         rows=rows,

@@ -97,7 +97,10 @@
   <dialog class="share-dialog" data-share-dialog>
     <h2>Share this selection</h2>
     <p class="muted">Anyone with this link can view these items — no account needed.</p>
-    <input type="text" data-share-url readonly>
+    <label class="share-name" for="share-title">Name this list <span class="hint-inline">(optional, 30 characters)</span></label>
+    <input type="text" id="share-title" data-share-title maxlength="30" placeholder="e.g. Whips for Sam">
+    <label class="share-name" for="share-url">Link</label>
+    <input type="text" id="share-url" data-share-url readonly>
     <p class="hint" data-share-cap hidden>Only the first {{ MAX_SHARE_IDS or 100 }} items are included.</p>
     <div class="form-actions">
       <button class="btn btn-primary" type="button" data-share-copy>Copy link</button>

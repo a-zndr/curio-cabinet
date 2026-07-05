@@ -17,6 +17,7 @@ fields:
     label: Maker
     type: text
     required: true
+    suggest: true               # admin form offers existing makers (autocomplete)
     link: maker_web_link        # render the value as a link to this field's URL
     views: { table: true, card: secondary, filter: multi, pivot: [group] }
 

@@ -240,6 +240,35 @@ def _item_or_404(item_id: str):
     return row
 
 
+def _form_extras() -> dict:
+    """Autocomplete data for the admin form: existing distinct values for
+    `suggest` text fields, and a map of value->linked-value so picking a known
+    maker can pre-fill its website."""
+    registry = g.registry
+    table = registry.table
+    suggestions: dict[str, list[str]] = {}
+    autofill: dict[str, dict] = {}
+    for f in registry.fields:
+        if f.suggest:
+            col = registry.quoted(f.key)
+            rows = g.db.execute(
+                f'SELECT DISTINCT {col} AS v FROM "{table}" '
+                f"WHERE {col} IS NOT NULL AND {col} != '' ORDER BY v COLLATE NOCASE"
+            ).fetchall()
+            suggestions[f.key] = [r["v"] for r in rows]
+        if f.link and f.link in registry.by_key:
+            src, tgt = registry.quoted(f.key), registry.quoted(f.link)
+            rows = g.db.execute(
+                f'SELECT {src} AS k, {tgt} AS v FROM "{table}" '
+                f"WHERE {src} != '' AND {tgt} IS NOT NULL AND {tgt} != '' "
+                f"ORDER BY \"updated_at\""
+            ).fetchall()
+            mapping = {r["k"]: r["v"] for r in rows}  # later rows win (most recent)
+            if mapping:
+                autofill[f.key] = {"target": f.link, "map": mapping}
+    return {"suggestions": suggestions, "autofill": autofill}
+
+
 @bp.route("/items/new", methods=["GET", "POST"])
 def item_new():
     errors: dict[str, str] = {}
@@ -261,7 +290,8 @@ def item_new():
             flash(f"Added {item_id}")
             return redirect(url_for("admin.item_edit", item_id=item_id))
     return render_template(
-        "admin/form.html", item=None, raw=raw, errors=errors, gallery=[]
+        "admin/form.html", item=None, raw=raw, errors=errors, gallery=[],
+        **_form_extras()
     )
 
 
@@ -285,7 +315,8 @@ def item_edit(item_id: str):
             return redirect(url_for("admin.item_edit", item_id=item_id))
     gallery = images.images_for_item(g.db, item_id)
     return render_template(
-        "admin/form.html", item=item, raw=raw, errors=errors, gallery=gallery
+        "admin/form.html", item=item, raw=raw, errors=errors, gallery=gallery,
+        **_form_extras()
     )
 
 

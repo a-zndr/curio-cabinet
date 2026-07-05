@@ -222,15 +222,26 @@
   });
 
   // Share dialog
+  var SHARE_TITLE_MAX = 30;
   function shareUrl() {
     var ids = Selection.ids().slice(0, 100);
-    return location.origin + "/list?ids=" + encodeURIComponent(ids.join(","));
+    var url = location.origin + "/list?ids=" + encodeURIComponent(ids.join(","));
+    var t = document.querySelector("[data-share-title]");
+    var name = t && t.value.trim().slice(0, SHARE_TITLE_MAX);
+    if (name) url += "&title=" + encodeURIComponent(name);
+    return url;
   }
+  function refreshShareUrl() {
+    var f = document.querySelector("[data-share-url]");
+    if (f) f.value = shareUrl();
+  }
+  document.addEventListener("input", function (event) {
+    if (event.target.closest("[data-share-title]")) refreshShareUrl();
+  });
   document.addEventListener("click", function (event) {
     var dialog = document.querySelector("[data-share-dialog]");
     if (event.target.closest("[data-share-open]") && dialog) {
-      var url = shareUrl();
-      dialog.querySelector("[data-share-url]").value = url;
+      refreshShareUrl();
       var cap = dialog.querySelector("[data-share-cap]");
       if (cap) cap.hidden = Selection.ids().length <= 100;
       var native = dialog.querySelector("[data-share-native]");
@@ -390,4 +401,30 @@
     });
   }
   document.addEventListener("DOMContentLoaded", initAutosave);
+
+  // Admin form: pre-fill a linked field (e.g. maker website) when a known
+  // value (e.g. an existing maker) is chosen. Data from a JSON <script> tag.
+  function initAutofill() {
+    var el = document.getElementById("cc-autofill");
+    if (!el) return;
+    var data;
+    try {
+      data = JSON.parse(el.textContent);
+    } catch (e) {
+      return;
+    }
+    Object.keys(data).forEach(function (srcKey) {
+      var src = document.getElementById("f-" + srcKey);
+      var conf = data[srcKey];
+      var tgt = document.getElementById("f-" + conf.target);
+      if (!src || !tgt) return;
+      var fill = function () {
+        var v = conf.map[src.value];
+        if (v && !tgt.value.trim()) tgt.value = v;
+      };
+      src.addEventListener("input", fill);
+      src.addEventListener("change", fill);
+    });
+  }
+  document.addEventListener("DOMContentLoaded", initAutofill);
 })();

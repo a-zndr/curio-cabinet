@@ -193,6 +193,34 @@ def test_upload_rejects_garbage(client):
     assert "unsupported image format" in resp.get_data(as_text=True)
 
 
+def test_totp_login_flow(app, client):
+    # regression for the /admin/login/totp 500: full two-step login through HTTP
+    import time
+
+    import pyotp
+
+    from curio_cabinet import auth
+    from curio_cabinet.db import connect
+
+    inst = app.config["CABINET_INSTANCE"]
+    conn = connect(inst.db_path, journal_mode=inst.journal_mode)
+    uid = conn.execute("SELECT id FROM users").fetchone()[0]
+    auth.begin_totp_enrollment(conn, uid)
+    secret = conn.execute("SELECT totp_secret FROM users").fetchone()[0]
+    totp = pyotp.TOTP(secret)
+    assert auth.confirm_totp_enrollment(conn, uid, totp.now())
+    conn.close()
+
+    r = client.post("/admin/login", data={"username": "zee", "password": PW})
+    assert r.status_code == 302 and "/login/totp" in r.headers["Location"]
+
+    code = totp.at(int(time.time()) + 30)  # next step (enrollment used the current one)
+    r = client.post("/admin/login/totp", data={"code": code})
+    assert r.status_code == 302
+    assert r.headers["Location"].rstrip("/").endswith("/admin")
+    assert client.get("/admin/").status_code == 200  # authenticated
+
+
 def test_logout(client):
     csrf = _login(client)
     resp = client.post("/admin/logout", data={"csrf_token": csrf})

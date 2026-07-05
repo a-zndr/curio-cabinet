@@ -29,7 +29,7 @@
   {%- endif -%}
 {%- endmacro %}
 
-{% macro field_input(field, raw, errors) -%}
+{% macro field_input(field, raw, errors, suggestions={}) -%}
   {%- set v = raw.get(field.key) -%}
   {%- set v = '' if v is none else v -%}
   <div class="form-field {% if errors.get(field.key) %}has-error{% endif %}">
@@ -83,6 +83,14 @@
 
     {%- elif field.type.value == 'url' -%}
       <input id="f-{{ field.key }}" name="{{ field.key }}" type="url" value="{{ v }}" placeholder="https://…">
+
+    {%- elif field.type.value == 'text' and field.suggest -%}
+      <input id="f-{{ field.key }}" name="{{ field.key }}" value="{{ v }}"
+             list="dl-{{ field.key }}" autocomplete="off"
+             {% if field.link %}data-link-src="{{ field.key }}"{% endif %}>
+      <datalist id="dl-{{ field.key }}">
+        {% for choice in suggestions.get(field.key, []) %}<option value="{{ choice }}">{% endfor %}
+      </datalist>
 
     {%- else -%}
       <input id="f-{{ field.key }}" name="{{ field.key }}" value="{{ v }}">

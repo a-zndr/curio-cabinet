@@ -18,6 +18,7 @@
 
 <form method="post" class="item-form" data-autosave="{{ 'edit-' ~ item['id'] if item else 'new' }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  {% if autofill %}<script type="application/json" id="cc-autofill">{{ autofill | tojson }}</script>{% endif %}
 
   {% for group in registry.groups %}
   <fieldset class="form-group"
@@ -28,7 +29,7 @@
     <legend>{{ group.label }}</legend>
     <div class="form-grid">
       {% for key in group.fields %}
-        {{ field_input(registry.by_key[key], raw, errors) }}
+        {{ field_input(registry.by_key[key], raw, errors, suggestions) }}
       {% endfor %}
     </div>
   </fieldset>

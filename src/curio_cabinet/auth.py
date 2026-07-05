@@ -319,6 +319,15 @@ def verify_totp(conn: sqlite3.Connection, user: sqlite3.Row, code: str) -> bool:
     return _totp_check(conn, user, code)
 
 
+def _user_id(user: sqlite3.Row) -> int:
+    """Resolve the users.id from either a plain users row (`id`) or a
+    session-join row (which aliases it and also carries `user_id`)."""
+    keys = user.keys()
+    if "id" in keys:
+        return user["id"]
+    return user["user_id"]
+
+
 def _totp_check(conn: sqlite3.Connection, user: sqlite3.Row, code: str) -> bool:
     code = code.strip().replace(" ", "")
     if not code.isdigit():
@@ -335,7 +344,7 @@ def _totp_check(conn: sqlite3.Connection, user: sqlite3.Row, code: str) -> bool:
         if hmac.compare_digest(expected, code):
             conn.execute(
                 "UPDATE users SET totp_last_counter = ? WHERE id = ?",
-                (candidate, user["id"]),
+                (candidate, _user_id(user)),
             )
             conn.commit()
             return True
