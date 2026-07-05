@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Run tests
+        run: python -m pytest -q
+      - name: Validate example configs
+        run: |
+          python - <<'PY'
+          import glob
+          from curio_cabinet.config import load_config
+          for path in glob.glob("examples/*/collection.yaml"):
+              load_config(path)
+              print("OK", path)
+          PY

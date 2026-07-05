@@ -1,0 +1,112 @@
+# Config reference
+
+A collection is defined by one `collection.yaml`. It is validated at startup;
+a mistake fails loudly with a message rather than misbehaving later.
+
+Run `curio-cabinet config-reference` to print the field types and their
+per-type view defaults from the running version.
+
+## Top level
+
+```yaml
+collection:
+  title: "My Collection"     # shown in the header and titles
+  slug: items                # table name + identifier; [a-z][a-z0-9_]*
+  id:
+    strategy: sequential     # only value supported today
+    width: 4                 # zero-padded id width -> "0001"
+  title_field: name          # which field is the headline on cards/detail
+  default_sort: {field: name, order: asc}
+  accent_hue: 45             # optional: OKLCH hue for the UI accent (0-360)
+
+fields:  [ ... ]             # see below
+groups:  [ ... ]             # detail-page + admin-form sections
+```
+
+## Fields
+
+Each entry under `fields:`:
+
+```yaml
+- key: length              # snake_case; becomes the column name
+  label: Length            # human label (also a CSV header)
+  type: number             # see types below
+  required: false          # empty value rejected on write if true
+  default: null            # value used when input is empty (must be valid)
+  searchable: false        # text/longtext/tags: included in the ?q= search
+  link: some_url_field     # text fields: render as a link to this url field
+  values: [A, B, C]        # enum only: allowed values
+  strict: false            # enum only: reject values outside `values`
+  unit: { ... }            # number/integer only: see units
+  rename_from: old_key     # migration hint (see migrations.md)
+  views:
+    table: false           # show as a default table column (default: off)
+    card: hidden           # primary | secondary | hidden
+    detail: true           # show on the detail page
+    filter: none           # none | multi | range
+    sort: true             # allow sorting by this field
+    pivot: [group]         # any of: group, avg, min, max, sum
+```
+
+Every `views` key is optional and falls back to a per-type default. `table`
+defaults to **off** so adding a field never silently changes the public table.
+
+### Types
+
+| type       | stored as        | notes |
+|------------|------------------|-------|
+| `text`     | TEXT             | single line |
+| `longtext` | TEXT             | multi-line; excluded from tables by default |
+| `number`   | REAL             | supports `unit` |
+| `integer`  | INTEGER          | supports `unit`; whole numbers only |
+| `boolean`  | INTEGER (0/1)    | "Yes"/"No" in the UI |
+| `enum`     | TEXT             | needs `values`; `strict` controls new values |
+| `tags`     | TEXT (JSON array)| comma-separated input; multi-select filter |
+| `url`      | TEXT             | must start with http:// or https:// |
+| `date`     | TEXT (ISO-8601)  | `YYYY-MM-DD` |
+
+### Units
+
+A `number`/`integer` field can carry a unit. Two forms:
+
+```yaml
+# convertible: one canonical stored unit, one or more display units
+unit: {dimension: length, store: cm, display: [cm, in]}
+
+# label only: a suffix with no conversion
+unit: {label: "g/m"}
+```
+
+Known dimensions: `length` (mm, cm, m, in, ft) and `mass` (g, kg, oz, lb).
+Input accepts a bare number (assumed to be the store unit) or a unit suffix —
+`"24 in"`, `"6.5 ft"`, `"198 cm"` all store correctly. An unrecognized suffix
+is a hard error, never a silent guess. The detail page shows every display
+unit; tables and cards show the first. Range filters are entered in the first
+display unit and converted for you.
+
+## Groups
+
+Groups define the sections on the detail page and admin form, and can be shown
+conditionally.
+
+```yaml
+groups:
+  - key: core
+    label: Overview
+    fields: [maker, type, description]
+  - key: whip
+    label: Whip Details
+    when: {field: type, eq: Whip}   # only shown when type == "Whip"
+    fields: [whip_type, plait_count]
+```
+
+- Every field must belong to exactly one group. Fields you don't place are
+  auto-collected into an implicit "Other" group so nothing is ever invisible.
+- `when` supports `eq` (equals) or `in` (one of a list). It controls only
+  detail/form visibility — a conditional field still participates in the
+  table, filters, and pivot like any other column.
+
+## Rethemeing
+
+Set `collection.accent_hue` for a one-line rebrand, or ship an instance
+stylesheet overriding any `--*` custom property from `static/css/tokens.css`.

@@ -1,0 +1,77 @@
+# A contrasting example: a camera-lens collection. Nothing in the engine
+# knows about toys OR lenses — both are just field configs.
+
+collection:
+  title: "Lens Cabinet"
+  slug: lenses
+  id:
+    strategy: sequential
+    width: 3
+  title_field: model
+  default_sort: { field: focal_length, order: asc }
+  accent_hue: 250            # cool blue-violet instead of the toy cognac
+
+fields:
+  - key: brand
+    label: Brand
+    type: enum
+    values: [Canon, Nikon, Sony, Fujifilm, Sigma, Tamron, Voigtländer, Other]
+    strict: false
+    views: { table: true, card: secondary, filter: multi, pivot: [group] }
+
+  - key: model
+    label: Model
+    type: text
+    required: true
+    searchable: true
+    views: { table: true }
+
+  - key: mount
+    label: Mount
+    type: enum
+    values: [EF, RF, F, E, X, L]
+    views: { filter: multi, pivot: [group] }
+
+  - key: focal_length
+    label: Focal Length
+    type: number
+    unit: { label: "mm" }
+    views: { table: true, card: secondary, filter: range, pivot: [avg, min, max] }
+
+  - key: max_aperture
+    label: Max Aperture
+    type: number
+    unit: { label: "f/" }
+    views: { table: true, card: secondary, filter: range }
+
+  - key: weight
+    label: Weight
+    type: number
+    unit: { dimension: mass, store: g, display: [g, oz] }
+    views: { table: true, filter: range, pivot: [avg] }
+
+  - key: prime
+    label: Prime
+    type: boolean
+    views: { filter: multi, pivot: [group] }
+
+  - key: acquired
+    label: Acquired
+    type: date
+    views: { table: true }
+
+  - key: notes
+    label: Notes
+    type: longtext
+    searchable: true
+
+groups:
+  - key: core
+    label: Lens
+    fields: [brand, model, mount, prime]
+  - key: optics
+    label: Optics
+    fields: [focal_length, max_aperture, weight]
+  - key: history
+    label: History
+    fields: [acquired, notes]

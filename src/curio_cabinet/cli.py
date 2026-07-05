@@ -248,6 +248,26 @@ def reset_password(ctx: click.Context) -> None:
     click.echo(f"password reset for {username!r}; all sessions logged out")
 
 
+@main.command("config-reference")
+def config_reference() -> None:
+    """Print the field-config reference (types and per-type view defaults)."""
+    from .config import FieldType, default_views
+
+    click.echo("# Field types\n")
+    for ftype in FieldType:
+        v = default_views(ftype)
+        click.echo(f"## {ftype.value}")
+        click.echo(
+            f"  default views: table={v['table']}, card={v['card']}, "
+            f"detail={v['detail']}, filter={v['filter']}, sort={v['sort']}, "
+            f"pivot={list(v['pivot'])}"
+        )
+    click.echo(
+        "\nEvery `views:` key is overridable per field. `table` defaults to "
+        "off so a new field never silently joins the public table."
+    )
+
+
 @main.command()
 @click.option("--host", default="127.0.0.1", show_default=True)
 @click.option("--port", default=8080, show_default=True, type=int)

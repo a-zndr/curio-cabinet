@@ -1,0 +1,19 @@
+# Run Curio-Cabinet with Docker. Put your instance (collection.yaml, .env,
+# data/, images/) in ./instance next to this file, then:
+#
+#   docker compose -f deploy/docker-compose.yml up -d
+#
+# First run: docker compose ... run --rm web curio-cabinet create-admin
+
+services:
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    ports:
+      - "8099:8099"
+    volumes:
+      - ./instance:/instance
+    environment:
+      CABINET_INSTANCE: /instance
+    restart: unless-stopped
