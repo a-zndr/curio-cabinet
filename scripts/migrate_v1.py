@@ -58,8 +58,10 @@ COLUMN_MAP = {
     "plait_count": "plait_count",
     "fall_count": "fall_count",
     "cracker_attachment": "cracker_attachment",
+    # V1 had two fall-length columns; in practice only _2 was ever filled and
+    # they never coexist, so they merge into one field (primary wins if both).
     "fall_length_cm": "fall_length",
-    "fall_length_cm_2": "fall_length_2",
+    "fall_length_cm_2": "fall_length",
     "fall_notes": "fall_notes",
     "heal_knot_d_mm": "heel_knot_diameter",
     "max_diam_mm": "max_diameter",
@@ -83,6 +85,8 @@ def build_row(v1: sqlite3.Row, registry, reports: list[str]) -> tuple[str, dict]
         raw = v1[v1col]
         if raw is None or (isinstance(raw, str) and not raw.strip()):
             continue
+        if key in out:
+            continue  # a merged target already filled by an earlier column
 
         if key == "rear_balance":
             raw = float(raw) * 100.0  # fraction -> percent
