@@ -11,17 +11,31 @@
 
 set -e
 
-DATA="/home/protected/data"
-DB="$DATA/catalog.db"
-BACKUPS="$DATA/backups"
+# CABINET_INSTANCE root; the engine keeps the DB at <instance>/data/catalog.db
+INSTANCE="${CABINET_INSTANCE:-/home/protected/data}"
+DB="$INSTANCE/data/catalog.db"
+BACKUPS="$INSTANCE/data/backups"
 STAMP="$(date -u +%Y%m%d-%H%M%S)"
 OUT="$BACKUPS/catalog-$STAMP.db"
+
+# guard against a wrong path: sqlite3 would silently CREATE an empty db there,
+# back it up, and pass the integrity check — a worthless backup
+if [ ! -f "$DB" ]; then
+    echo "no database at $DB" >&2
+    exit 1
+fi
 
 mkdir -p "$BACKUPS"
 
 sqlite3 "$DB" "VACUUM INTO '$OUT'"
 if [ "$(sqlite3 "$OUT" 'PRAGMA integrity_check')" != "ok" ]; then
     echo "integrity check FAILED for $OUT" >&2
+    rm -f "$OUT"
+    exit 1
+fi
+# an intact-but-empty snapshot is still a failed backup
+if [ "$(sqlite3 "$OUT" "SELECT count(*) FROM sqlite_master WHERE name='_meta'")" != "1" ]; then
+    echo "snapshot $OUT has no engine tables — wrong DB path?" >&2
     rm -f "$OUT"
     exit 1
 fi

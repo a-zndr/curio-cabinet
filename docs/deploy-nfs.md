@@ -28,7 +28,7 @@ proxy, TLS handled automatically. All member-UI steps are one-time.
 ```
 /home/protected/app/       <- git checkout of this repo (code only)
 /home/protected/venv/      <- python -m venv; pip install -e app[serve,heic]
-/home/protected/data/      <- instance: collection.yaml, catalog.db, images/, backups/
+/home/protected/data/      <- instance: collection.yaml, images/, data/{catalog.db, backups/}
 /home/protected/env        <- chmod 600; SECRET_KEY=..., CABINET_JOURNAL_MODE=WAL
 /home/public/              <- leave empty (nothing sensitive is web-reachable)
 ```
