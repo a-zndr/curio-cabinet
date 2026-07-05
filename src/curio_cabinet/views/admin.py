@@ -226,17 +226,47 @@ def _missing_must_haves(row, photo_ids: set) -> list[str]:
     return missing
 
 
+def _due_maintenance(row) -> list[str]:
+    """Chips for date fields with an every_days cadence that are blank or
+    older than the cadence (e.g. "Last Driven: 75d ago")."""
+    import datetime
+
+    today = datetime.date.today()
+    due = []
+    for f in g.registry.fields:
+        if f.every_days is None:
+            continue
+        v = row[f.key]
+        if not v:
+            due.append(f"{f.label}: never")
+            continue
+        try:
+            then = datetime.date.fromisoformat(str(v)[:10])
+        except ValueError:
+            due.append(f"{f.label}: unreadable date")
+            continue
+        days = (today - then).days
+        if days > f.every_days:
+            due.append(f"{f.label}: {days}d ago")
+    return due
+
+
 def _incomplete_items() -> list[dict] | None:
-    """Items missing must-have data, or None when none are configured."""
+    """Items missing must-have data or overdue on a maintenance date,
+    or None when neither is configured."""
     reg = g.registry
-    if not (any(f.must_have for f in reg.fields) or reg.collection.must_have_photos):
+    configured = (
+        any(f.must_have or f.every_days for f in reg.fields)
+        or reg.collection.must_have_photos
+    )
+    if not configured:
         return None
     photo_ids = {
         r["item_id"] for r in g.db.execute('SELECT DISTINCT "item_id" FROM images')
     }
     out = []
     for row in g.db.execute(f'SELECT * FROM "{reg.table}" ORDER BY "id"'):
-        missing = _missing_must_haves(row, photo_ids)
+        missing = _missing_must_haves(row, photo_ids) + _due_maintenance(row)
         if missing:
             out.append({
                 "id": row["id"],
@@ -717,6 +747,12 @@ def _update_field_views(f: dict, key: str) -> None:
         f["must_have"] = True
     else:
         f.pop("must_have", None)
+    if ftype == "date":
+        days = request.form.get(f"everydays__{key}", "").strip()
+        if days.isdecimal() and int(days) > 0:
+            f["every_days"] = int(days)
+        else:
+            f.pop("every_days", None)
     if ftype in ("text", "longtext", "tags"):
         f["searchable"] = f"search__{key}" in request.form
     if ftype == "text":
@@ -725,6 +761,16 @@ def _update_field_views(f: dict, key: str) -> None:
         vals = [v.strip() for v in request.form.get(f"values__{key}", "").split(",") if v.strip()]
         if vals:
             f["values"] = vals
+    # private wins — runs LAST so no later assignment (searchable above)
+    # can reintroduce public exposure and bounce the whole save
+    if f"private__{key}" in request.form:
+        f["private"] = True
+        for k in ("table", "card", "filter", "sort", "pivot"):
+            views.pop(k, None)
+        f["views"] = views
+        f.pop("searchable", None)
+    else:
+        f.pop("private", None)
 
 
 @bp.post("/customize/fields")
@@ -738,6 +784,21 @@ def customize_fields():
         if lbl:
             f["label"] = lbl
         _update_field_views(f, key)
+    private_keys = {f["key"] for f in raw.get("fields", []) if f.get("private")}
+    if private_keys:
+        # private wins everywhere: presets and links may not expose the field
+        kept = []
+        for p in raw.get("presets", []):
+            p["columns"] = [c for c in p.get("columns", []) if c not in private_keys]
+            if p["columns"]:
+                kept.append(p)
+        if raw.get("presets"):
+            raw["presets"] = kept
+            if not kept:
+                raw.pop("presets", None)
+        for f in raw.get("fields", []):
+            if f.get("link") in private_keys and not f.get("private"):
+                f.pop("link", None)
     return _apply(raw, "Field settings saved")
 
 
@@ -762,6 +823,8 @@ def customize_add_field():
         return redirect(url_for("admin.customize"))
 
     newf: dict = {"key": key, "label": label, "type": ftype}
+    if request.form.get("private"):
+        newf["private"] = True
     if ftype in _NUM_TYPES:
         dim = request.form.get("dim", "")
         store = request.form.get("store", "").strip()
@@ -793,7 +856,10 @@ def customize_add_preset():
     label = request.form.get("label", "").strip()
     field = request.form.get("filter_field", "")
     values = [v.strip() for v in request.form.get("filter_values", "").split(",") if v.strip()]
-    columns = request.form.getlist("columns")
+    columns = [
+        c for c in request.form.getlist("columns")
+        if not (g.registry.by_key.get(c) and g.registry.by_key[c].private)
+    ]
     if not key or not label or not field or not values or not columns:
         flash("A specialty table needs a name, a filter, and at least one column.", "error")
         return redirect(url_for("admin.customize"))

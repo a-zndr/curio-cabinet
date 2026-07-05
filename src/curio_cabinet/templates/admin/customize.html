@@ -112,6 +112,13 @@
               <label class="chk"><input type="checkbox" name="pivot__{{ k }}" {{ 'checked' if f.pivot_ops }}> Analytics</label>
             {% endif %}
             <label class="chk" title="Doesn't block saving — items missing this appear on the dashboard's To finish list"><input type="checkbox" name="musthave__{{ k }}" {{ 'checked' if f.must_have }}> Must-have</label>
+            {% if k != registry.collection.title_field %}
+              <label class="chk" title="Only visible to you — hidden from every public page"><input type="checkbox" name="private__{{ k }}" {{ 'checked' if f.private }}> Private</label>
+            {% endif %}
+            {% if f.type.value == 'date' %}
+              <label class="chk" title="Blank or older dates appear on the dashboard's To finish list">Remind every
+                <input type="number" name="everydays__{{ k }}" value="{{ f.every_days or '' }}" min="1" class="cfg-days"> days</label>
+            {% endif %}
           </div>
           {% if f.type.value == 'enum' %}
             <label class="cfg-values">Options <input name="values__{{ k }}" value="{{ f.values|join(', ') }}" placeholder="comma, separated"></label>
@@ -174,7 +181,7 @@
       <div class="form-field cfg-cols">
         <label>Columns</label>
         <div class="cfg-colgrid">
-          {% for f in registry.fields if f.key != registry.collection.title_field %}
+          {% for f in registry.fields if f.key != registry.collection.title_field and not f.private %}
             <label class="chk"><input type="checkbox" name="columns" value="{{ f.key }}"> {{ f.label }}</label>
           {% endfor %}
         </div>
@@ -221,6 +228,7 @@
         <input name="unit_label" placeholder="or a label like %, g/m">
       </div>
       <div class="form-field"><label>Options <span class="hint-inline">(enum, comma-separated)</span></label><input name="values" placeholder="New, Used, Worn"></div>
+      <div class="form-field"><label class="chk" title="Only visible to you — hidden from every public page"><input type="checkbox" name="private"> Private</label></div>
       <div><button class="btn btn-primary" type="submit">Add field</button></div>
     </form>
   </details>

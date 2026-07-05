@@ -245,6 +245,9 @@ class FieldSpec:
     required: bool = False
     must_have: bool = False            # soft-required: tracked on the admin
                                        # to-finish list, never blocks a save
+    private: bool = False              # admin-only: never rendered publicly
+    every_days: int | None = None      # date fields: maintenance cadence; a
+                                       # blank/stale date lands on the to-finish list
     default: Any = None
     searchable: bool = False
     suggest: bool = False              # text fields: admin form offers existing values
@@ -260,9 +263,9 @@ class FieldSpec:
         raw = _mapping(raw, "field")
         _reject_unknown(
             raw,
-            {"key", "label", "type", "required", "must_have", "default",
-             "searchable", "suggest", "unit", "link", "values", "strict",
-             "rename_from", "views"},
+            {"key", "label", "type", "required", "must_have", "private",
+             "every_days", "default", "searchable", "suggest", "unit", "link",
+             "values", "strict", "rename_from", "views"},
             "field",
         )
         key = _str(raw, "key", "field")
@@ -289,6 +292,8 @@ class FieldSpec:
             type=ftype,
             required=_bool(raw, "required", ctx),
             must_have=_bool(raw, "must_have", ctx),
+            private=_bool(raw, "private", ctx),
+            every_days=raw.get("every_days"),
             default=raw.get("default"),
             searchable=_bool(raw, "searchable", ctx),
             suggest=_bool(raw, "suggest", ctx),
@@ -312,11 +317,36 @@ class FieldSpec:
             raise ValueError(f"{ctx}: searchable only applies to text-like fields")
         if spec.suggest and spec.type is not FieldType.text:
             raise ValueError(f"{ctx}: suggest only applies to text fields")
+        if spec.every_days is not None:
+            if spec.type is not FieldType.date:
+                raise ValueError(f"{ctx}: every_days only applies to date fields")
+            if not isinstance(spec.every_days, int) or isinstance(spec.every_days, bool) \
+                    or spec.every_days < 1:
+                raise ValueError(f"{ctx}: every_days must be a positive integer")
+        if spec.private:
+            if spec.searchable:
+                raise ValueError(f"{ctx}: a private field cannot be searchable")
+            v = spec.views
+            if (v.table or v.sort or (v.card and v.card != "hidden")
+                    or (v.filter and v.filter != "none") or v.pivot):
+                raise ValueError(
+                    f"{ctx}: a private field cannot appear in public views "
+                    "(table/card/filter/sort/pivot)"
+                )
         return spec
 
     # Effective view settings (per-type defaults applied) -----------------
 
+    # public-view settings a private field is never allowed to have,
+    # regardless of explicit config or per-type defaults
+    _PRIVATE_FORCED = {
+        "table": False, "card": "hidden", "filter": "none",
+        "sort": False, "pivot": (),
+    }
+
     def _view(self, name: str) -> Any:
+        if self.private and name in self._PRIVATE_FORCED:
+            return self._PRIVATE_FORCED[name]
         explicit = getattr(self.views, name)
         if explicit is not None:
             return explicit
@@ -585,6 +615,10 @@ def _validate(
 
     if collection.title_field not in by_key:
         raise ValueError("collection.title_field references unknown field")
+    if by_key[collection.title_field].private:
+        # the headline renders on every public surface (cards, table, OG,
+        # share pages); a private title would be a contradiction that leaks
+        raise ValueError("collection.title_field cannot be a private field")
     if collection.default_sort.field not in by_key:
         raise ValueError("collection.default_sort references unknown field")
 
@@ -593,6 +627,11 @@ def _validate(
             target = by_key.get(f.link)
             if target is None or target.type is not FieldType.url:
                 raise ValueError(f"field {f.key!r}: link must name a url field")
+            if target.private and not f.private:
+                # the link URL is emitted into public HTML via the anchor
+                raise ValueError(
+                    f"field {f.key!r}: link target {f.link!r} is private"
+                )
 
     grouped: dict[str, str] = {}
     for g in groups:
@@ -621,6 +660,9 @@ def _validate(
         for col in p.columns:
             if col not in by_key:
                 raise ValueError(f"preset {p.key!r}: unknown column {col!r}")
+            if by_key[col].private:
+                # preset columns render in the public table
+                raise ValueError(f"preset {p.key!r}: column {col!r} is private")
 
     # labels double as CSV headers; ambiguous key/label mappings corrupt imports
     taken: dict[str, str] = {}

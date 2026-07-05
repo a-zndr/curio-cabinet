@@ -265,7 +265,8 @@ def _browse_context():
         "chips": _active_filters(registry, request.args),
         # fields the user may show/hide in table columns or on cards
         "pickable_fields": [
-            f for f in registry.fields if f.in_detail and f.key != title_field
+            f for f in registry.fields
+            if f.in_detail and not f.private and f.key != title_field
         ],
     }
 
@@ -279,11 +280,17 @@ def _browse_context():
             # column precedence: explicit ?col= > preset columns > defaults.
             # The title field is always shown as the sticky "Item" column, so
             # exclude it here to avoid a duplicate column.
-            requested = [c for c in request.args.getlist("col") if c in registry.by_key]
+            requested = [
+                c for c in request.args.getlist("col")
+                if c in registry.by_key and not registry.by_key[c].private
+            ]
             if requested:
                 keys = requested
             elif preset is not None:
-                keys = list(preset.columns)
+                keys = [
+                    c for c in preset.columns
+                    if not registry.by_key[c].private
+                ]
             else:
                 keys = list(registry.table_default_keys)
             keys = [k for k in keys if k != title_field]
@@ -292,7 +299,10 @@ def _browse_context():
             ctx["selected_field_keys"] = keys
         elif view == "cards":
             # card meta fields: ?cardf= override > config `card: secondary`
-            requested = [c for c in request.args.getlist("cardf") if c in registry.by_key]
+            requested = [
+                c for c in request.args.getlist("cardf")
+                if c in registry.by_key and not registry.by_key[c].private
+            ]
             default = [
                 f.key for f in registry.card_fields
                 if f.card_slot == "secondary" and f.key != title_field

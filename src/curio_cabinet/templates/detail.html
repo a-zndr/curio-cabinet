@@ -26,6 +26,7 @@
         {% for key in group.fields %}
           {% set field = registry.by_key[key] %}
           {% if field.in_detail and key != registry.collection.title_field
+                and (not field.private or admin_user)
                 and item[key] is not none and item[key] != '' %}
             {% set _ = filled.append(field) %}
           {% endif %}
@@ -36,7 +37,7 @@
           <dl class="spec-list">
             {% for field in filled %}
             <div class="spec-row">
-              <dt>{{ field.label }}</dt>
+              <dt>{{ field.label }}{% if field.private %} <span class="private-badge" title="Only you can see this">private</span>{% endif %}</dt>
               <dd>{{ field_value(item, field, ctx='detail') }}</dd>
             </div>
             {% endfor %}

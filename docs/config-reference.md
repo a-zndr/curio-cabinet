@@ -43,6 +43,14 @@ Each entry under `fields:`:
                            # missing it show on the admin dashboard's
                            # "To finish" list (see also
                            # collection.must_have_photos for photos)
+  private: false           # admin-only: shown to you on detail/admin pages,
+                           # never on the public table/cards/filters/search/
+                           # analytics/share pages. Private fields can't be
+                           # searchable or appear in public views.
+  every_days: 60           # date fields only: maintenance cadence. Items
+                           # whose date is blank or older than this many
+                           # days appear on the "To finish" list
+                           # (e.g. last_driven: drive every car every 60d)
   default: null            # value used when input is empty (must be valid)
   searchable: false        # text/longtext/tags: included in the ?q= search
   link: some_url_field     # text fields: render as a link to this url field

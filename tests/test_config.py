@@ -143,3 +143,72 @@ def test_config_sha_stable_and_schema_sensitive():
     raw = _raw()
     raw["fields"].append({"key": "extra", "label": "Extra", "type": "text"})
     assert make_config(raw).sha() != a.sha()
+
+
+def test_every_days_only_on_date_fields():
+    raw = _raw()
+    raw["fields"].append({"key": "last_used", "label": "Last Used",
+                          "type": "date", "every_days": 60})
+    config = make_config(raw)
+    assert next(f for f in config.fields if f.key == "last_used").every_days == 60
+
+    bad = _raw()
+    bad["fields"].append({"key": "oops", "label": "Oops",
+                          "type": "text", "every_days": 30})
+    with pytest.raises(Exception, match="date fields"):
+        make_config(bad)
+
+    neg = _raw()
+    neg["fields"].append({"key": "neg", "label": "Neg",
+                          "type": "date", "every_days": 0})
+    with pytest.raises(Exception, match="positive"):
+        make_config(neg)
+
+
+def test_private_field_forced_out_of_public_views():
+    raw = _raw()
+    raw["fields"].append({"key": "secret", "label": "Secret",
+                          "type": "longtext", "private": True})
+    config = make_config(raw)
+    f = next(f for f in config.fields if f.key == "secret")
+    assert f.private
+    assert not f.in_table and f.card_slot == "hidden"
+    assert f.filter_kind == "none" and not f.sortable and not f.pivot_ops
+    assert f.in_detail  # detail is gated at render time on admin_user
+
+
+def test_private_field_rejects_public_exposure():
+    for bad_bits in ({"searchable": True}, {"views": {"table": True}},
+                     {"views": {"card": "secondary"}},
+                     {"views": {"filter": "multi"}}):
+        raw = _raw()
+        raw["fields"].append({"key": "secret", "label": "Secret",
+                              "type": "text", "private": True, **bad_bits})
+        with pytest.raises(Exception, match="private"):
+            make_config(raw)
+
+
+def test_private_cannot_be_title_link_target_or_preset_column():
+    # title field (clear its other public settings so only this check trips)
+    raw = _raw()
+    raw["fields"][0].update(private=True, searchable=False, views={})
+    with pytest.raises(Exception, match="title_field"):
+        make_config(raw)
+
+    # link target
+    raw = _raw()
+    raw["fields"].append({"key": "vendor_url", "label": "Vendor URL",
+                          "type": "url", "private": True})
+    raw["fields"][0]["link"] = "vendor_url"
+    with pytest.raises(Exception, match="private"):
+        make_config(raw)
+
+    # preset column
+    raw = _raw()
+    raw["fields"].append({"key": "secret", "label": "Secret", "type": "text",
+                          "private": True})
+    raw["presets"] = [{"key": "x", "label": "X",
+                       "filter": {"field": "kind", "eq": "Widget"},
+                       "columns": ["secret"]}]
+    with pytest.raises(Exception, match="private"):
+        make_config(raw)

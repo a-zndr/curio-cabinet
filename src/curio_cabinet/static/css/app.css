@@ -330,6 +330,18 @@ input[type="file"] { border: none; padding: 0; background: none; }
   vertical-align: 2px;
 }
 .todo-missing { display: flex; gap: var(--space-1); flex-wrap: wrap; }
+.cfg-days { width: 64px; }
+.private-badge {
+  font-size: 0.7em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 0 4px;
+  vertical-align: 1px;
+}
 .todo-chip {
   font-size: var(--text-sm);
   color: var(--danger);
