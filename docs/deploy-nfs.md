@@ -5,12 +5,23 @@
 This is the setup the project was built for: a Python daemon behind NFS's
 proxy, TLS handled automatically. All member-UI steps are one-time.
 
-### 1. Create the site
+### 1. Create the site + point DNS at it
 
-- Add a new site in the member UI. Add your subdomain (e.g.
-  `toys.example.com`) as an **alias**; since NFS hosts your DNS, this creates
-  the CNAME automatically, and **TLS is provisioned automatically** — no
-  `tls-setup.sh`.
+- Add a new site in the member UI and add your subdomain (e.g.
+  `toys.example.com`) as an **alias** on it. This tells NFS to serve that
+  hostname and to request a TLS cert for it.
+- **DNS:** if NFS hosts your domain's DNS, adding the alias creates the record
+  automatically. **If DNS is managed elsewhere** (e.g. Hover, Cloudflare, your
+  registrar), you must add the record there yourself: create a **CNAME** for
+  the subdomain pointing at the target NFS shows in the site's Information
+  panel (typically `yourshortname.nfshost.com`). Use a CNAME for a subdomain;
+  only the apex needs A/AAAA records.
+- **TLS is automatic but only after the record resolves to NFS.** Let's Encrypt
+  validates over HTTP, so the cert is issued once your CNAME propagates and
+  traffic reaches the site (usually minutes to an hour). No `tls-setup.sh`.
+  Leave `CABINET_COOKIE_SECURE` at its secure default and just wait for HTTPS
+  to come up before logging into `/admin` — the public pages work over HTTP in
+  the meantime, but the admin session cookie is (correctly) HTTPS-only.
 
 ### 2. Lay out the files
 
