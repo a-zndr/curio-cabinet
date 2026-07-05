@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Import CSV · {{ registry.collection.title }}{% endblock %}
+{% block nav %}<a href="{{ url_for('admin.dashboard') }}">Admin</a>{% endblock %}
+{% block main_class %}page{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Import CSV</h1></div>
+<p class="muted">
+  The first row must be a header of field names or labels — the same shape
+  <a href="{{ url_for('admin.export') }}">Export CSV</a> produces, so export
+  first if you want a template. Each row adds a new item; an
+  <span class="mono">id</span> column is optional (ids are assigned when
+  it's absent) and rows never overwrite existing items.
+</p>
+
+{% if report %}
+<section class="import-report">
+  <h2>{{ 'Result' if applied else 'Preview' }}</h2>
+  <p>
+    <strong>{{ report.imported }}</strong>
+    row{{ '' if report.imported == 1 else 's' }}
+    {{ 'imported' if applied else 'ready to import' }}
+    {% if report.skipped %} · <strong>{{ report.skipped }}</strong> skipped{% endif %}
+    {% if filename %} · <span class="mono">{{ filename }}</span>{% endif %}
+  </p>
+  {% if report.mapped %}
+    <p class="muted">Matched columns: {{ report.mapped|join(', ') }}</p>
+  {% endif %}
+  {% for note in report.notes %}
+    <p class="muted">Note: {{ note }}</p>
+  {% endfor %}
+  {% if report.errors %}
+    <ul class="import-errors">
+      {% for err in report.errors[:30] %}<li>{{ err }}</li>{% endfor %}
+    </ul>
+    {% if report.errors|length > 30 %}
+      <p class="muted">…and {{ report.errors|length - 30 }} more.</p>
+    {% endif %}
+  {% endif %}
+  {% if not applied %}
+    {% if report.imported %}
+    <form method="post" action="{{ url_for('admin.import_apply') }}" class="import-confirm">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="digest" value="{{ digest }}">
+      <button class="btn btn-primary" type="submit">
+        Import {{ report.imported }} item{{ '' if report.imported == 1 else 's' }}
+      </button>
+      <a class="btn" href="{{ url_for('admin.import_page') }}">Cancel</a>
+    </form>
+    {% else %}
+    <p class="field-error">Nothing importable — fix the rows above and upload again.</p>
+    {% endif %}
+  {% endif %}
+</section>
+{% endif %}
+
+{% if not applied %}
+<form method="post" enctype="multipart/form-data"
+      action="{{ url_for('admin.import_page') }}" class="import-upload">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="form-field">
+    <label for="csv-file">CSV file</label>
+    <input id="csv-file" type="file" name="file" accept=".csv,text/csv" required>
+  </div>
+  <button class="btn btn-primary" type="submit">Preview import</button>
+</form>
+{% else %}
+<p><a class="btn" href="{{ url_for('admin.import_page') }}">Import another file</a></p>
+{% endif %}
+{% endblock %}

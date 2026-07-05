@@ -59,3 +59,49 @@ def test_export_round_trip(conn, registry):
     conn.execute('DELETE FROM "things"')
     report = import_csv(conn, registry, text)
     assert report.imported == 2 and report.skipped == 0
+
+
+def test_dry_run_flags_id_collisions(conn, registry):
+    insert_thing(conn, "0001", name="Existing")
+    text = "id,name\n0001,DupOfExisting\n0002,Ok\n0002,DupInFile\nbad*id,Chars\n"
+    report = import_csv(conn, registry, text, dry_run=True)
+    assert report.imported == 1 and report.skipped == 3
+    assert any("already exists" in e for e in report.errors)
+    assert any("appears twice" in e for e in report.errors)
+    assert any("letters, digits" in e for e in report.errors)
+    (n,) = conn.execute('SELECT COUNT(*) FROM "things"').fetchone()
+    assert n == 1  # dry run wrote nothing
+
+
+def test_live_run_matches_dry_run_on_collisions(conn, registry):
+    insert_thing(conn, "0001", name="Existing")
+    text = "id,name\n0001,DupOfExisting\n0002,Ok\n0002,DupInFile\n"
+    dry = import_csv(conn, registry, text, dry_run=True)
+    live = import_csv(conn, registry, text)
+    assert (dry.imported, dry.skipped) == (live.imported, live.skipped) == (1, 2)
+    rows = conn.execute('SELECT "id", "name" FROM "things" ORDER BY "id"').fetchall()
+    assert [(r["id"], r["name"]) for r in rows] == [("0001", "Existing"), ("0002", "Ok")]
+
+
+def test_skipped_row_does_not_claim_its_id(conn, registry):
+    # line 2 is invalid (missing required name) but carries id 0007; the
+    # valid line 3 reusing 0007 must import, matching what a real run does
+    text = "id,name\n0007,\n0007,Valid\n"
+    report = import_csv(conn, registry, text)
+    assert report.imported == 1 and report.skipped == 1
+    row = conn.execute('SELECT "name" FROM "things" WHERE "id" = ?', ("0007",)).fetchone()
+    assert row["name"] == "Valid"
+
+
+def test_report_lists_mapped_columns(conn, registry):
+    report = import_csv(conn, registry, CSV_BY_LABEL, dry_run=True)
+    assert report.mapped == ["name", "kind", "length", "materials", "active"]
+
+
+def test_huge_cell_is_a_clean_error_and_rolls_back(conn, registry):
+    text = 'name\nBefore\n"' + "x" * 200_000 + '"\nAfter\n'
+    report = import_csv(conn, registry, text)
+    assert report.imported == 0
+    assert any("not a readable CSV" in e for e in report.errors)
+    (n,) = conn.execute('SELECT COUNT(*) FROM "things"').fetchone()
+    assert n == 0  # the row before the bad cell was rolled back, not kept

@@ -14,7 +14,7 @@
   <a class="btn btn-primary" href="{{ url_for('admin.item_new') }}">Add item</a>
 </div>
 
-<p class="muted">{{ count }} items · <a href="{{ url_for('admin.export') }}">Export CSV</a></p>
+<p class="muted">{{ count }} items · <a href="{{ url_for('admin.export') }}">Export CSV</a> · <a href="{{ url_for('admin.import_page') }}">Import CSV</a></p>
 
 <h2>Recently updated</h2>
 {% if recent %}

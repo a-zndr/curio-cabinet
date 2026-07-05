@@ -15,6 +15,8 @@ collection:
   id:
     strategy: sequential     # only value supported today
     width: 4                 # zero-padded id width -> "0001"
+                             # ids use [A-Za-z0-9_-] only (share URLs rely on it);
+                             # CSV imports enforce this on explicit id columns
   title_field: name          # which field is the headline on cards/detail
   default_sort: {field: name, order: asc}
   accent_hue: 45             # optional: OKLCH hue for the UI accent (0-360)

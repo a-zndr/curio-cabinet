@@ -20,8 +20,9 @@ keyboards, hand tools, houseplants, vinyl records, or whatever you collect.
   enum, tags, boolean, url, date…), units with automatic conversion (store cm,
   display inches), and per-field view rules.
 - **Edit from the browser.** Secure single-admin auth (argon2id password +
-  optional TOTP), add/edit/delete items, and upload photos — no more editing
-  files and committing to publish.
+  optional TOTP), add/edit/delete items, upload photos, and import/export
+  CSV with a validation preview — no more editing files and committing to
+  publish.
 - **Share a selection by link.** Anyone (no account) can select N items and
   send a URL; the link encodes the selection itself, so there's no server
   state and it works forever.

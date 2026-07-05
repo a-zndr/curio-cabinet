@@ -55,8 +55,13 @@ curio-cabinet import-csv mydata.csv --dry-run   # preview
 curio-cabinet import-csv mydata.csv             # commit
 ```
 
-The CSV header may use field keys or labels. Values are validated exactly as
-admin edits are (units parsed, enums checked, etc.).
+Or do it from the browser: **Admin → Import CSV** uploads a file, shows a
+validation preview (nothing is written yet), and imports on confirm. Very
+large files (20k+ rows) stay CLI-only.
+
+Either way the CSV header may use field keys or labels, and values are
+validated exactly as admin edits are (units parsed, enums checked, etc.).
+Rows always add new items; they never overwrite existing ones.
 
 ## 7. Run
 

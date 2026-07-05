@@ -7,6 +7,7 @@ CSRF-checked against the server-side session's synchronizer token.
 
 from __future__ import annotations
 
+import hashlib
 import io
 
 import qrcode
@@ -26,7 +27,7 @@ from flask import (
 
 from .. import auth, images
 from ..coerce import coerce_row
-from ..csvio import export_csv, next_id
+from ..csvio import export_csv, import_csv, next_id
 from ..db import utcnow
 
 bp = Blueprint("admin", __name__)
@@ -483,6 +484,87 @@ def export():
         headers={
             "Content-Disposition": f"attachment; filename={g.registry.table}.csv"
         },
+    )
+
+
+# CSV import: upload -> dry-run preview -> hash-verified apply ----------------
+
+_PENDING_IMPORT = "pending-import.csv"
+MAX_IMPORT_ROWS = 20_000  # bigger jobs belong on the CLI, not a web request
+
+
+def _pending_import_path():
+    return g.inst.db_path.parent / _PENDING_IMPORT
+
+
+def _decode_csv_upload(data: bytes) -> tuple[str, str | None]:
+    """UTF-8 (BOM tolerated) first, UTF-16 by BOM; fall back to Windows-1252
+    — what Excel writes for plain "CSV" on most machines — with a note."""
+    if data[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        return data.decode("utf-16"), None
+    try:
+        return data.decode("utf-8-sig"), None
+    except UnicodeDecodeError:
+        return (
+            data.decode("cp1252", errors="replace"),
+            "file was not UTF-8; decoded as Windows-1252 — check accented text",
+        )
+
+
+@bp.route("/import", methods=["GET", "POST"])
+def import_page():
+    if request.method == "GET":
+        return render_template("admin/import.html", report=None, applied=False)
+    file = request.files.get("file")
+    if file is None or not file.filename:
+        flash("Choose a CSV file first.", "error")
+        return redirect(url_for("admin.import_page"))
+    text, encoding_note = _decode_csv_upload(file.read())
+    if text.count("\n") > MAX_IMPORT_ROWS:
+        flash(
+            f"That file has more than {MAX_IMPORT_ROWS} rows — use "
+            "`curio-cabinet import-csv` on the command line instead.",
+            "error",
+        )
+        return redirect(url_for("admin.import_page"))
+    report = import_csv(g.db, g.registry, text, dry_run=True)
+    if encoding_note:
+        report.notes.insert(0, encoding_note)
+    # stash and hash the exact same bytes; text-mode IO would translate CRLF
+    # on the way back and the digest check would refuse every Excel CSV
+    stashed = text.encode("utf-8")
+    _pending_import_path().write_bytes(stashed)
+    return render_template(
+        "admin/import.html",
+        report=report,
+        applied=False,
+        filename=file.filename,
+        digest=hashlib.sha256(stashed).hexdigest(),
+    )
+
+
+@bp.post("/import/apply")
+def import_apply():
+    pending = _pending_import_path()
+    if not pending.is_file():
+        flash("Nothing to import — upload the CSV again.", "error")
+        return redirect(url_for("admin.import_page"))
+    stashed = pending.read_bytes()
+    if hashlib.sha256(stashed).hexdigest() != request.form.get("digest", ""):
+        # a newer upload replaced the previewed file; never apply blind
+        flash("The pending file changed since the preview — upload it again.", "error")
+        return redirect(url_for("admin.import_page"))
+    text = stashed.decode("utf-8")
+    report = import_csv(g.db, g.registry, text)
+    pending.unlink(missing_ok=True)
+    if report.imported:
+        msg = f"Imported {report.imported} item{'' if report.imported == 1 else 's'}"
+        if report.skipped:
+            msg += f" ({report.skipped} skipped)"
+        flash(msg)
+        return redirect(url_for("admin.dashboard"))
+    return render_template(
+        "admin/import.html", report=report, applied=True, filename=None
     )
 
 

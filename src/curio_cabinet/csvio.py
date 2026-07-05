@@ -10,6 +10,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import re
 import sqlite3
 from dataclasses import dataclass, field
 
@@ -33,6 +34,12 @@ class ImportReport:
     skipped: int = 0
     errors: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    mapped: list[str] = field(default_factory=list)  # field keys, header order
+
+
+# Share URLs assume this charset (views/public.py _parse_ids drops anything
+# else); explicit ids from a CSV must not smuggle other characters in.
+_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 def _header_map(
@@ -103,41 +110,76 @@ def import_csv(
     except StopIteration:
         report.errors.append("empty CSV")
         return report
+    except csv.Error as exc:
+        report.errors.append(f"not a readable CSV: {exc}")
+        return report
     mapping = _header_map(registry, header, report)
     if mapping is None:
         return report
     mapped_keys = set(mapping.values())
+    report.mapped = [mapping[i] for i in sorted(mapping)]
 
-    for line_no, row in enumerate(reader, start=2):
-        if not any(cell.strip() for cell in row):
-            continue  # blank line
-        cells = {mapping[i]: _unquote_formula(cell) for i, cell in enumerate(row) if i in mapping}
-        explicit_id = cells.pop("id", "").strip()
-        # whole-row semantics: absent columns are empty input, so required
-        # checks and defaults run for every field on every row
-        raw = {f.key: cells.get(f.key, "") for f in registry.fields}
-        values, errors = coerce_row(registry.fields, raw)
-        if errors:
-            report.skipped += 1
-            for key, reason in errors.items():
-                report.errors.append(f"line {line_no}, {key}: {reason}")
-            continue
-        if not dry_run:
-            item_id = explicit_id or next_id(conn, registry)
-            cols = ["id", *values.keys(), "created_at", "updated_at"]
-            quoted = ", ".join(f'"{c}"' for c in cols)
-            marks = ", ".join("?" for _ in cols)
-            now = utcnow()
-            try:
-                conn.execute(
-                    f'INSERT INTO "{registry.table}" ({quoted}) VALUES ({marks})',
-                    [item_id, *values.values(), now, now],
-                )
-            except sqlite3.IntegrityError as exc:
+    # pre-check explicit ids so a dry run reports the same collisions a real
+    # import would hit (within the file and against existing rows)
+    existing_ids = {
+        r[0] for r in conn.execute(f'SELECT "id" FROM "{registry.table}"')
+    }
+    seen_ids: set[str] = set()
+
+    try:
+        for line_no, row in enumerate(reader, start=2):
+            if not any(cell.strip() for cell in row):
+                continue  # blank line
+            cells = {mapping[i]: _unquote_formula(cell) for i, cell in enumerate(row) if i in mapping}
+            explicit_id = cells.pop("id", "").strip()
+            # whole-row semantics: absent columns are empty input, so required
+            # checks and defaults run for every field on every row
+            raw = {f.key: cells.get(f.key, "") for f in registry.fields}
+            values, errors = coerce_row(registry.fields, raw)
+            if explicit_id:
+                if not _ID_RE.match(explicit_id):
+                    errors["id"] = "ids may only use letters, digits, - and _"
+                elif explicit_id in existing_ids:
+                    errors["id"] = f"id {explicit_id!r} already exists in the collection"
+                elif explicit_id in seen_ids:
+                    errors["id"] = f"id {explicit_id!r} appears twice in this file"
+            if errors:
                 report.skipped += 1
-                report.errors.append(f"line {line_no}: {exc}")
+                for key, reason in errors.items():
+                    report.errors.append(f"line {line_no}, {key}: {reason}")
                 continue
-        report.imported += 1
+            if explicit_id:
+                # claimed only by rows that actually import, so a duplicate on a
+                # skipped row doesn't block a later valid row (matches real runs)
+                seen_ids.add(explicit_id)
+            if not dry_run:
+                item_id = explicit_id or next_id(conn, registry)
+                cols = ["id", *values.keys(), "created_at", "updated_at"]
+                quoted = ", ".join(f'"{c}"' for c in cols)
+                marks = ", ".join("?" for _ in cols)
+                now = utcnow()
+                try:
+                    conn.execute(
+                        f'INSERT INTO "{registry.table}" ({quoted}) VALUES ({marks})',
+                        [item_id, *values.values(), now, now],
+                    )
+                except sqlite3.IntegrityError as exc:
+                    report.skipped += 1
+                    report.errors.append(f"line {line_no}: {exc}")
+                    continue
+            report.imported += 1
+    except csv.Error as exc:
+        # e.g. a cell over the csv field-size limit; treat the whole file as
+        # bad rather than half-importing it (or 500ing the caller)
+        if not dry_run:
+            conn.rollback()
+        report.skipped += report.imported
+        report.imported = 0
+        report.errors.append(
+            f"around line {reader.line_num}: not a readable CSV ({exc}) — "
+            "nothing was imported"
+        )
+        return report
     if "id" not in mapped_keys and report.imported:
         report.notes.append("no id column: ids were assigned sequentially")
     if not dry_run:

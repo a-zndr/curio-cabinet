@@ -863,6 +863,31 @@ body.panel-open { overflow: hidden; }
 .list-head { margin-bottom: var(--space-4); }
 .list-cta { margin-top: var(--space-6); text-align: center; }
 
+/* CSV import ---------------------------------------------------------------- */
+
+.import-report {
+  margin: var(--space-5) 0;
+  padding: var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.import-errors {
+  margin: var(--space-3) 0;
+  padding: var(--space-3);
+  max-height: 40vh;
+  overflow-y: auto;
+  list-style: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--danger);
+  background: color-mix(in oklab, var(--danger) 6%, var(--surface));
+  border-radius: var(--radius-sm);
+}
+.import-errors li { margin: 2px 0; }
+.import-confirm { display: flex; gap: var(--space-3); margin-top: var(--space-4); }
+.import-upload { max-width: 440px; }
+
 /* keep content clear of the fixed mobile bar */
 @media (max-width: 767px) {
   .browse-main { padding-bottom: 72px; }
