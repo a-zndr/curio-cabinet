@@ -290,3 +290,26 @@ def test_theme_css_served(client):
     r = client.get("/theme.css")
     assert r.status_code == 200
     assert "text/css" in r.headers["Content-Type"]
+
+
+def test_favicon_defaults_to_title_initial(client):
+    r = client.get("/favicon.svg")
+    assert r.status_code == 200
+    assert r.mimetype == "image/svg+xml"
+    body = r.get_data(as_text=True)
+    assert ">D</text>" in body  # collection title is "Demo"
+    # page links the favicon with a cache-busting version
+    page = client.get("/").get_data(as_text=True)
+    assert "/favicon.svg?v=" in page
+
+
+def test_favicon_monogram_is_escaped(client, app):
+    # a hostile monogram must not become markup inside the SVG
+    from curio_cabinet import configio
+
+    inst = app.config["CABINET_INSTANCE"]
+    raw = configio.load_raw(inst)
+    raw["collection"]["monogram"] = "<z"
+    app.config["CABINET_INSTANCE"] = configio.apply_config(inst, raw)
+    body = client.get("/favicon.svg").get_data(as_text=True)
+    assert "<z</text>" not in body and "&lt;z</text>" in body

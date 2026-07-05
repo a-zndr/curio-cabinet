@@ -434,6 +434,36 @@ def theme_css():
     }
 
 
+@bp.get("/favicon.svg")
+def favicon():
+    """Config-driven favicon: the collection's monogram (or title initial)
+    on an accent-colored tile. Generated like theme.css so it follows the
+    theme; the base.html link carries a version param for cache busting."""
+    from markupsafe import escape
+
+    from ..colors import contrast_hex, oklch_to_hex
+
+    coll = g.registry.collection
+    if coll.accent:
+        bg = coll.accent
+    else:
+        hue = coll.accent_hue if coll.accent_hue is not None else 45
+        bg = oklch_to_hex(0.55, 0.125, hue)
+    letter = coll.monogram or next((ch for ch in coll.title if ch.isalnum()), "?")
+    body = (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">'
+        f'<rect width="64" height="64" rx="14" fill="{bg}"/>'
+        '<text x="32" y="33" text-anchor="middle" dominant-baseline="central" '
+        'font-family="system-ui, -apple-system, sans-serif" '
+        f'font-size="{40 if len(letter) == 1 else 30}" font-weight="600" '
+        f'fill="{contrast_hex(bg)}">{escape(letter)}</text></svg>'
+    )
+    return body, 200, {
+        "Content-Type": "image/svg+xml",
+        "Cache-Control": "public, max-age=86400",
+    }
+
+
 @bp.get("/images/<content_hash>/<variant>")
 def image(content_hash: str, variant: str):
     """Content-addressed image serving. Validation before any file access:

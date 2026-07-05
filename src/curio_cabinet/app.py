@@ -165,6 +165,10 @@ def create_app(instance_root: str | None = None) -> Flask:
             f"{coll.accent or ''}"
             f"{coll.accent_hue if coll.accent_hue is not None else ''}"
         ).lstrip("#") or "default"
+        letter = coll.monogram or next(
+            (ch for ch in coll.title if ch.isalnum()), "?"
+        )
+        favicon_version = f"{theme_version}-{letter}"
 
         return {
             "registry": g.registry,
@@ -173,6 +177,7 @@ def create_app(instance_root: str | None = None) -> Flask:
             "url_with": url_with,
             "MAX_SHARE_IDS": 100,
             "theme_version": theme_version,
+            "favicon_version": favicon_version,
         }
 
     return app

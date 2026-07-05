@@ -20,6 +20,8 @@ collection:
   title_field: name          # which field is the headline on cards/detail
   default_sort: {field: name, order: asc}
   accent_hue: 45             # optional: OKLCH hue for the UI accent (0-360)
+  monogram: z                # optional: favicon letter(s), 1-2 chars;
+                             # defaults to the title's first letter
 
 fields:  [ ... ]             # see below
 groups:  [ ... ]             # detail-page + admin-form sections

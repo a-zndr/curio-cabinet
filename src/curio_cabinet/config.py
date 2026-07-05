@@ -471,13 +471,15 @@ class CollectionMeta:
     id: IdSpec = dc_field(default_factory=IdSpec)
     accent_hue: int | None = None
     accent: str | None = None  # full hex color; takes precedence over accent_hue
+    monogram: str | None = None  # favicon letter(s); defaults to title initial
 
     @classmethod
     def from_raw(cls, raw: Any) -> "CollectionMeta":
         raw = _mapping(raw, "collection")
         _reject_unknown(
             raw,
-            {"title", "slug", "id", "title_field", "default_sort", "accent_hue", "accent"},
+            {"title", "slug", "id", "title_field", "default_sort",
+             "accent_hue", "accent", "monogram"},
             "collection",
         )
         slug = _str(raw, "slug", "collection")
@@ -496,6 +498,11 @@ class CollectionMeta:
             if norm is None:
                 raise ValueError("collection.accent must be a hex color like #7c5cff")
             accent = norm
+        monogram = raw.get("monogram")
+        if monogram is not None:
+            monogram = str(monogram).strip()
+            if not 1 <= len(monogram) <= 2:
+                raise ValueError("collection.monogram must be 1-2 characters")
         if "default_sort" not in raw:
             raise ValueError("collection: 'default_sort' is required")
         return cls(
@@ -506,6 +513,7 @@ class CollectionMeta:
             id=IdSpec.from_raw(raw.get("id")),
             accent_hue=hue,
             accent=accent,
+            monogram=monogram,
         )
 
 

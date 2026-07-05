@@ -17,6 +17,12 @@
         <input id="cz-title" name="title" value="{{ registry.collection.title }}">
       </div>
       <div class="form-field">
+        <label for="cz-monogram">Favicon letter <span class="hint-inline">(1&ndash;2 characters)</span></label>
+        <input id="cz-monogram" name="monogram" maxlength="2" size="4"
+               value="{{ registry.collection.monogram or '' }}"
+               placeholder="{{ registry.collection.title[:1] }}">
+      </div>
+      <div class="form-field">
         <label for="cz-titlefield">Headline field</label>
         <select id="cz-titlefield" name="title_field">
           {% for f in registry.fields %}

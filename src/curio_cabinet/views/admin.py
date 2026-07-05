@@ -612,6 +612,11 @@ def customize_general():
     title = request.form.get("title", "").strip()
     if title:
         c["title"] = title
+    mono = request.form.get("monogram", "").strip()
+    if mono:
+        c["monogram"] = mono[:2]
+    else:
+        c.pop("monogram", None)  # cleared → fall back to the title initial
     color = request.form.get("accent", "").strip()
     if color:
         from ..colors import normalize_hex
