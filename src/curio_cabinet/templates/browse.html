@@ -1,44 +1,84 @@
 {% extends "base.html" %}
-{% from "_filters.html" import filter_panel %}
+{% from "_filters.html" import filter_form %}
 {% block content %}
 <div class="browse" data-selection-key="{{ registry.collection.slug }}">
 
-  {# desktop filter sidebar #}
-  <aside class="filter-sidebar">
-    {{ filter_panel(registry, options, args) }}
-  </aside>
+  <div class="browse-bar">
+    <button class="btn filters-btn" type="button" data-open-filters>
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 4h12M4 8h8M6 12h4"/></svg>
+      Filters<span class="filter-badge" data-filter-count hidden></span>
+    </button>
 
-  <div class="browse-main">
-    <div class="browse-toolbar">
-      <form class="search-form" method="get" action="{{ url_for('public.index') }}"
-            hx-get="{{ url_for('public.index') }}" hx-target="#results"
-            hx-select="#results" hx-swap="outerHTML" hx-push-url="true"
-            hx-trigger="submit, input from:find input[name=q] delay:300ms">
-        {{ filter_panel(registry, options, args, hidden=True) }}
-        <input type="search" name="q" value="{{ args.get('q', '') }}"
-               placeholder="Search…" aria-label="Search" autocomplete="off">
-        <input type="hidden" name="view" value="{{ view }}">
-      </form>
+    <form class="search-form" data-owns="q" role="search"
+          hx-get="{{ url_for('public.index') }}" hx-target="#results"
+          hx-select="#results" hx-swap="outerHTML" hx-push-url="true"
+          hx-trigger="submit, input changed delay:350ms">
+      <svg class="search-icon" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M14 14l-3.2-3.2"/></svg>
+      <input type="search" name="q" value="{{ args.get('q', '') }}"
+             placeholder="Search…" aria-label="Search" autocomplete="off">
+    </form>
 
-      <div class="view-switch" role="tablist" aria-label="View">
-        {% for v, label in [('cards','Cards'), ('table','Table'), ('pivot','Pivot')] %}
-          {% set vurl = url_with(view=v) %}
-          <a class="seg {{ 'is-active' if view == v }}" role="tab" data-view="{{ v }}"
-             href="{{ vurl }}" hx-get="{{ vurl }}"
-             hx-target="#results" hx-select="#results" hx-swap="outerHTML" hx-push-url="true">{{ label }}</a>
-        {% endfor %}
-      </div>
-
-      <button class="btn btn-sm" type="button" data-toggle-select>Select</button>
+    <div class="view-switch" role="tablist" aria-label="View">
+      {% for v, label in [('cards','Cards'), ('table','Table'), ('pivot','Pivot')] %}
+        {% set vurl = url_with(view=v) %}
+        <a class="seg {{ 'is-active' if view == v }}" role="tab" data-view="{{ v }}"
+           href="{{ vurl }}" hx-get="{{ vurl }}"
+           hx-target="#results" hx-select="#results" hx-swap="outerHTML" hx-push-url="true">{{ label }}</a>
+      {% endfor %}
     </div>
 
-    {% include "_results.html" %}
+    {% if view in ('cards', 'table') and pickable_fields %}
+      <details class="dd fields-dd">
+        <summary class="btn">
+          {{ 'Columns' if view == 'table' else 'Fields' }}
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+        </summary>
+        <div class="dd-pop">
+          <p class="dd-hint">{{ 'Columns to show' if view == 'table' else 'Details on each card' }}</p>
+          <form class="fields-form" data-owns="{{ field_param }}"
+                hx-get="{{ url_for('public.index') }}" hx-target="#results"
+                hx-select="#results" hx-swap="outerHTML" hx-push-url="true"
+                hx-trigger="change">
+            {% for f in pickable_fields %}
+              <label class="dd-opt">
+                <input type="checkbox" name="{{ field_param }}" value="{{ f.key }}"
+                       {{ 'checked' if f.key in selected_field_keys }}>
+                <span>{{ f.label }}</span>
+              </label>
+            {% endfor %}
+          </form>
+        </div>
+      </details>
+    {% endif %}
+
+    <button class="btn" type="button" data-toggle-select>Select</button>
+  </div>
+
+  {% include "_results.html" %}
+
+  {# filter slide-over: right panel on desktop, bottom sheet on mobile #}
+  <div class="filters-backdrop" data-filter-sheet hidden>
+    <aside class="filters-panel" role="dialog" aria-label="Filters" aria-modal="true">
+      <header class="filters-head">
+        <strong>Filters</strong>
+        <button class="icon-btn" type="button" data-close-filters aria-label="Close filters">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+        </button>
+      </header>
+      <div class="filters-body">
+        {{ filter_form(registry, options, args) }}
+      </div>
+      <footer class="filters-foot">
+        <a class="btn" href="?view={{ view }}{% if active_preset %}&amp;preset={{ active_preset }}{% endif %}">Clear all</a>
+        <button class="btn btn-primary" type="button" data-close-filters>Show results</button>
+      </footer>
+    </aside>
   </div>
 
   {# mobile bottom toolbar (thumb zone) #}
   <nav class="mobile-bar">
     <button class="mobile-bar-btn" type="button" data-open-filters aria-label="Filters">
-      Filters {% if params.multi or params.ranges or params.search %}<span class="dot"></span>{% endif %}
+      Filters<span class="filter-badge" data-filter-count hidden></span>
     </button>
     <button class="mobile-bar-btn" type="button" data-toggle-select>Select</button>
     {% if admin_user %}
@@ -46,17 +86,7 @@
     {% endif %}
   </nav>
 
-  {# mobile filter sheet #}
-  <div class="sheet-backdrop" data-filter-sheet hidden>
-    <div class="sheet" role="dialog" aria-label="Filters">
-      <div class="sheet-handle"></div>
-      <div class="sheet-body">
-        {{ filter_panel(registry, options, args) }}
-      </div>
-    </div>
-  </div>
-
-  {# selection tray (shared Alpine-free store lives in app.js) #}
+  {# selection tray #}
   <div class="selection-tray" data-selection-tray hidden>
     <span class="tray-count" data-tray-count>0 selected</span>
     <button class="btn btn-sm" type="button" data-share-open>Share</button>

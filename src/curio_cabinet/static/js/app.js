@@ -1,7 +1,8 @@
-/* Curio-Cabinet client behaviors. Small, dependency-free where possible;
-   Alpine handles component state, htmx handles server round-trips.
-   Rule: no component-local Alpine state inside htmx swap targets —
-   shared state lives in Alpine.store, markup binds from it. */
+/* Curio-Cabinet client behaviors. Vanilla JS only (no framework), so the
+   strict CSP holds. htmx does the server round-trips; the URL is the single
+   source of truth for browse state, and the small helpers below keep the
+   toolbar/filter controls (which live outside the swapped #results) in sync
+   with it. */
 
 (function () {
   "use strict";
@@ -19,9 +20,37 @@
     localStorage.setItem("cc-theme", next);
   });
 
-  // Drop empty params so pushed/bookmarked URLs stay clean (the filter form
-  // always contains every range input; most are blank).
+  // Filter/search/field-picker forms carry ONLY their own fields. On submit
+  // we rebuild the request from the live URL (source of truth) minus the keys
+  // this form owns, plus the form's current values — so no form ever holds
+  // stale copies of the whole query. `data-owns` lists owned keys; a trailing
+  // * means prefix (e.g. "f.*"). Empty params are dropped to keep URLs clean.
   document.body.addEventListener("htmx:configRequest", function (evt) {
+    var el = evt.detail.elt;
+    var form = el && el.closest ? el.closest("form[data-owns]") : null;
+    if (form) {
+      var owns = form.dataset.owns.split(/\s+/).filter(Boolean);
+      var owned = function (k) {
+        if (k === "page") return true;
+        return owns.some(function (o) {
+          return o.charAt(o.length - 1) === "*"
+            ? k.indexOf(o.slice(0, -1)) === 0
+            : k === o;
+        });
+      };
+      var merged = {};
+      new URLSearchParams(location.search).forEach(function (v, k) {
+        if (owned(k)) return;
+        if (merged[k] === undefined) merged[k] = v;
+        else if (Array.isArray(merged[k])) merged[k].push(v);
+        else merged[k] = [merged[k], v];
+      });
+      var fp = evt.detail.parameters;
+      Object.keys(fp).forEach(function (k) {
+        merged[k] = fp[k];
+      });
+      evt.detail.parameters = merged;
+    }
     var p = evt.detail.parameters;
     Object.keys(p).forEach(function (k) {
       if (p[k] === "" || p[k] == null) delete p[k];
@@ -225,25 +254,97 @@
     }
   });
 
-  // Mobile filter sheet
+  // Filter panel (slide-over on desktop, bottom sheet on mobile) -----------
+  function setPanel(open) {
+    var sheet = document.querySelector("[data-filter-sheet]");
+    if (!sheet) return;
+    sheet.hidden = !open;
+    document.body.classList.toggle("panel-open", open);
+  }
   document.addEventListener("click", function (event) {
     var sheet = document.querySelector("[data-filter-sheet]");
     if (!sheet) return;
-    if (event.target.closest("[data-open-filters]")) {
-      sheet.hidden = false;
-      document.body.style.overflow = "hidden";
-    } else if (
-      event.target === sheet ||
-      event.target.closest("[data-close-filters]")
-    ) {
-      sheet.hidden = true;
-      document.body.style.overflow = "";
-    }
+    if (event.target.closest("[data-open-filters]")) setPanel(true);
+    else if (event.target === sheet || event.target.closest("[data-close-filters]"))
+      setPanel(false);
+  });
+  document.addEventListener("keydown", function (event) {
+    if (event.key === "Escape") setPanel(false);
+  });
+
+  // Search-within a facet's checkbox list
+  document.addEventListener("input", function (event) {
+    var box = event.target.closest("[data-facet-search]");
+    if (!box) return;
+    var q = box.value.trim().toLowerCase();
+    box
+      .closest(".facet-body")
+      .querySelectorAll(".facet-opt")
+      .forEach(function (opt) {
+        opt.hidden = q && (opt.dataset.optText || "").indexOf(q) === -1;
+      });
+  });
+
+  // Live counts on facet headers + the Filters badge, from the filter form.
+  function updateFilterCounts() {
+    var form = document.querySelector(".filter-form");
+    if (!form) return;
+    var total = 0;
+    form.querySelectorAll("[data-facet]").forEach(function (facet) {
+      var n = facet.querySelectorAll("input[type=checkbox]:checked").length;
+      var nums = facet.querySelectorAll("input[type=number]");
+      var ranged = false;
+      nums.forEach(function (i) {
+        if (i.value.trim() !== "") ranged = true;
+      });
+      if (ranged) n += 1;
+      total += n;
+      var badge = facet.querySelector("[data-facet-count]");
+      if (badge) badge.textContent = n ? String(n) : "";
+      facet.classList.toggle("has-active", n > 0);
+    });
+    if (new URLSearchParams(location.search).get("q")) total += 1;
+    document.querySelectorAll("[data-filter-count]").forEach(function (b) {
+      b.textContent = total ? String(total) : "";
+      b.hidden = total === 0;
+    });
+  }
+
+  // Keep the FILTER and SEARCH controls in sync with the URL (source of truth)
+  // after chip removal, clear-all, or any swap. The field picker is excluded:
+  // when its param is absent the server renders the *default* selection, which
+  // the URL can't express — so we must not override it here.
+  function syncStateForms() {
+    var p = new URLSearchParams(location.search);
+    document
+      .querySelectorAll(".filter-form input[type=checkbox]")
+      .forEach(function (cb) {
+        cb.checked = p.getAll(cb.name).indexOf(cb.value) !== -1;
+      });
+    document
+      .querySelectorAll(".filter-form input[type=number], .search-form input[type=search]")
+      .forEach(function (i) {
+        if (document.activeElement !== i) i.value = p.get(i.name) || "";
+      });
+    updateFilterCounts();
+  }
+  document.addEventListener("input", function (event) {
+    if (event.target.closest(".filter-form")) updateFilterCounts();
+  });
+
+  // Close an open toolbar dropdown (Fields/Columns) on outside click.
+  document.addEventListener("click", function (event) {
+    document.querySelectorAll("details.dd[open]").forEach(function (dd) {
+      if (!dd.contains(event.target)) dd.open = false;
+    });
   });
 
   document.addEventListener("DOMContentLoaded", function () {
     Selection.render();
+    syncStateForms();
   });
+  document.body.addEventListener("htmx:afterSwap", syncStateForms);
+  window.addEventListener("popstate", syncStateForms);
 
   // Draft autosave: TEXT FIELDS ONLY (photos are not saved in drafts) -------
   var AUTOSAVE_MS = 1500;

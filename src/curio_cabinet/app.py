@@ -183,6 +183,11 @@ def _register_filters(app: Flask) -> None:
         except (json.JSONDecodeError, TypeError):
             return [part.strip() for part in str(value).split(",") if part.strip()]
 
+    @app.template_filter("select_filled")
+    def select_filled(fields, item):
+        """Fields whose value on this item is non-empty (for card meta)."""
+        return [f for f in fields if item[f.key] not in (None, "")]
+
     @app.template_filter("domain_only")
     def domain_only(url):
         try:

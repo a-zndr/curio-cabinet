@@ -1,13 +1,21 @@
 {% from "_fields.html" import field_value %}
 <section id="results" class="results" aria-live="polite">
+  {% if chips %}
+    <div class="chips-row">
+      {% for c in chips %}
+        <a class="chip removable" href="{{ c.url }}" hx-get="{{ c.url }}"
+           hx-target="#results" hx-select="#results" hx-swap="outerHTML" hx-push-url="true">
+          <span class="chip-label">{{ c.label }}:</span> {{ c.value }}
+          <span class="chip-x" aria-hidden="true">✕</span>
+        </a>
+      {% endfor %}
+      <a class="chip-clear" href="?view={{ view }}{% if active_preset %}&amp;preset={{ active_preset }}{% endif %}">Clear all</a>
+    </div>
+  {% endif %}
+
   {% if view != 'pivot' %}
     <div class="results-head">
       <span class="result-count">{{ total }} item{{ '' if total == 1 else 's' }}</span>
-      {% if params.multi or params.ranges or params.search %}
-        <a class="clear-link" href="?view={{ view }}"
-           hx-get="?view={{ view }}" hx-target="#results" hx-select="#results"
-           hx-swap="outerHTML" hx-push-url="true">Clear filters</a>
-      {% endif %}
     </div>
   {% endif %}
 
@@ -29,17 +37,10 @@
             </div>
             <div class="card-body">
               <span class="card-title">{{ item[registry.collection.title_field] }}</span>
-              {% set line = [] %}
-              {% for f in registry.card_fields if f.card_slot != 'hidden'
-                    and f.key != registry.collection.title_field
-                    and item[f.key] not in (none, '') %}
-                {% if f.card_slot == 'secondary' and line|length < 3 %}
-                  {% set _ = line.append(f) %}
-                {% endif %}
-              {% endfor %}
-              {% if line %}
+              {% set shown = card_fields | select_filled(item) %}
+              {% if shown %}
                 <span class="card-meta">
-                  {% for f in line %}<span class="num">{{ field_value(item, f, 'card') }}</span>{% if not loop.last %} · {% endif %}{% endfor %}
+                  {% for f in shown %}<span class="cardf">{{ field_value(item, f, 'card') }}</span>{% if not loop.last %}<span class="card-sep">·</span>{% endif %}{% endfor %}
                 </span>
               {% endif %}
             </div>
@@ -107,21 +108,6 @@
           </tbody>
         </table>
       </div>
-      <details class="column-picker">
-        <summary>Columns</summary>
-        <form method="get" hx-get="{{ url_for('public.index') }}" hx-target="#results"
-              hx-select="#results" hx-swap="outerHTML" hx-push-url="true">
-          <input type="hidden" name="view" value="table">
-          {% if active_preset %}<input type="hidden" name="preset" value="{{ active_preset }}">{% endif %}
-          {% for f in registry.fields if f.in_detail %}
-            <label class="col-opt">
-              <input type="checkbox" name="col" value="{{ f.key }}"
-                     {{ 'checked' if f in columns }}> {{ f.label }}
-            </label>
-          {% endfor %}
-          <button class="btn btn-sm" type="submit">Apply</button>
-        </form>
-      </details>
     {% else %}
       {% include "_empty.html" %}
     {% endif %}

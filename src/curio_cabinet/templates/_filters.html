@@ -1,64 +1,64 @@
-{# Filter panel generated entirely from the registry. Rendered both as the
-   desktop sidebar / mobile sheet (interactive) and, with hidden=True, as
-   hidden inputs inside the search form so a plain submit carries state. #}
+{# Filter form: one collapsible accordion per field. Rendered inside the
+   slide-over panel. The form carries ONLY filter fields (f.*, min_*, max_*);
+   app.js merges the rest of the URL state on submit (data-owns), so no stale
+   hidden inputs. Changes apply live to #results; the panel stays open. #}
 
-{% macro filter_panel(registry, options, args, hidden=False) %}
-  {% if hidden %}
-    {% for f in registry.multi_filter_fields %}
-      {% for value in args.getlist('f.' ~ f.key) %}
-        <input type="hidden" name="f.{{ f.key }}" value="{{ value }}">
-      {% endfor %}
-    {% endfor %}
-    {% for f in registry.range_filter_fields %}
-      {% if args.get('min_' ~ f.key) %}<input type="hidden" name="min_{{ f.key }}" value="{{ args.get('min_' ~ f.key) }}">{% endif %}
-      {% if args.get('max_' ~ f.key) %}<input type="hidden" name="max_{{ f.key }}" value="{{ args.get('max_' ~ f.key) }}">{% endif %}
-    {% endfor %}
-  {% else %}
-    <form class="filter-form" method="get" action="{{ url_for('public.index') }}"
-          hx-get="{{ url_for('public.index') }}" hx-target="#results"
-          hx-select="#results" hx-swap="outerHTML" hx-push-url="true"
-          hx-trigger="change, submit">
-      <input type="hidden" name="view" value="{{ args.get('view', 'cards') }}">
-      {% if args.get('q') %}<input type="hidden" name="q" value="{{ args.get('q') }}">{% endif %}
+{% macro filter_form(registry, options, args) %}
+<form class="filter-form" data-owns="f.* min_* max_*"
+      hx-get="{{ url_for('public.index') }}" hx-target="#results"
+      hx-select="#results" hx-swap="outerHTML" hx-push-url="true"
+      hx-trigger="change delay:250ms">
 
-      {% for f in registry.multi_filter_fields %}
-        {% set chosen = args.getlist('f.' ~ f.key) %}
-        <fieldset class="filter-group">
-          <legend>{{ f.label }}</legend>
-          <div class="filter-options">
-            {% for opt in options.multi.get(f.key, []) %}
-              <label class="filter-opt">
-                <input type="checkbox" name="f.{{ f.key }}" value="{{ opt }}"
-                       {{ 'checked' if opt in chosen }}>
-                <span>{{ opt }}</span>
-              </label>
-            {% endfor %}
-          </div>
-        </fieldset>
-      {% endfor %}
-
-      {% for f in registry.range_filter_fields %}
-        {% set bounds = options.range.get(f.key) %}
-        <fieldset class="filter-group">
-          <legend>{{ f.label }}{% if f.unit and f.unit.display %} ({{ f.unit.display[0] }}){% elif f.unit and f.unit.label %} ({{ f.unit.label }}){% endif %}</legend>
-          <div class="range-inputs">
-            <input type="number" name="min_{{ f.key }}" inputmode="decimal"
-                   value="{{ args.get('min_' ~ f.key, '') }}"
-                   placeholder="{{ bounds[0] if bounds and bounds[0] is not none else 'min' }}"
-                   aria-label="{{ f.label }} minimum">
-            <span aria-hidden="true">–</span>
-            <input type="number" name="max_{{ f.key }}" inputmode="decimal"
-                   value="{{ args.get('max_' ~ f.key, '') }}"
-                   placeholder="{{ bounds[1] if bounds and bounds[1] is not none else 'max' }}"
-                   aria-label="{{ f.label }} maximum">
-          </div>
-        </fieldset>
-      {% endfor %}
-
-      <div class="filter-actions">
-        <button class="btn btn-primary btn-block" type="submit">Apply</button>
-        <a class="btn btn-block" href="?view={{ args.get('view', 'cards') }}">Clear all</a>
+  {% for f in registry.multi_filter_fields %}
+    {% set chosen = args.getlist('f.' ~ f.key) %}
+    {% set opts = options.multi.get(f.key, []) %}
+    {% if opts %}
+    <details class="facet" data-facet {{ 'open' if chosen }}>
+      <summary>
+        <span class="facet-name">{{ f.label }}</span>
+        <span class="facet-count" data-facet-count>{{ chosen|length or '' }}</span>
+        <svg class="facet-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+      </summary>
+      <div class="facet-body">
+        {% if opts|length > 8 %}
+          <input type="search" class="facet-search" data-facet-search
+                 placeholder="Search {{ f.label|lower }}…" aria-label="Search {{ f.label }}"
+                 autocomplete="off">
+        {% endif %}
+        <div class="facet-opts">
+          {% for opt in opts %}
+            <label class="facet-opt" data-opt-text="{{ opt|lower }}">
+              <input type="checkbox" name="f.{{ f.key }}" value="{{ opt }}" {{ 'checked' if opt in chosen }}>
+              <span>{{ opt }}</span>
+            </label>
+          {% endfor %}
+        </div>
       </div>
-    </form>
-  {% endif %}
+    </details>
+    {% endif %}
+  {% endfor %}
+
+  {% for f in registry.range_filter_fields %}
+    {% set lo = args.get('min_' ~ f.key) %}
+    {% set hi = args.get('max_' ~ f.key) %}
+    {% set bounds = options.range.get(f.key) %}
+    {% set unit = (f.unit.display[0] if f.unit and f.unit.display else (f.unit.label if f.unit and f.unit.label else '')) %}
+    <details class="facet" data-facet {{ 'open' if lo or hi }}>
+      <summary>
+        <span class="facet-name">{{ f.label }}{% if unit %} <span class="facet-unit">{{ unit }}</span>{% endif %}</span>
+        <span class="facet-count" data-facet-count>{{ '1' if (lo or hi) else '' }}</span>
+        <svg class="facet-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+      </summary>
+      <div class="facet-body facet-range">
+        <input type="number" name="min_{{ f.key }}" inputmode="decimal" value="{{ lo or '' }}"
+               placeholder="{{ bounds[0] if bounds and bounds[0] is not none else 'Min' }}"
+               aria-label="{{ f.label }} minimum">
+        <span class="range-dash" aria-hidden="true">–</span>
+        <input type="number" name="max_{{ f.key }}" inputmode="decimal" value="{{ hi or '' }}"
+               placeholder="{{ bounds[1] if bounds and bounds[1] is not none else 'Max' }}"
+               aria-label="{{ f.label }} maximum">
+      </div>
+    </details>
+  {% endfor %}
+</form>
 {% endmacro %}

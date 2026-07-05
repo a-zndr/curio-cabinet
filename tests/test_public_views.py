@@ -202,6 +202,34 @@ def test_unknown_preset_is_ignored(client):
     assert "3 items" in r.get_data(as_text=True)  # no scoping
 
 
+def test_active_filter_chip_with_remove(client):
+    r = client.get("/?f.maker=Acme")
+    body = r.get_data(as_text=True)
+    assert "chip" in body and "Acme" in body
+    # the chip's remove link drops that value but keeps the rest
+    assert 'class="chip-clear"' in body
+
+
+def test_card_fields_override(client):
+    r = client.get("/?view=cards&cardf=length")
+    body = r.get_data(as_text=True)
+    # card meta shows the chosen field; maker (a default) is no longer forced
+    assert "card-meta" in body
+
+
+def test_table_excludes_title_column(client):
+    # the title field is the sticky "Item" column, never a duplicate data column
+    r = client.get("/?view=table")
+    headers = [
+        h for h in r.get_data(as_text=True).split("</th>")
+    ]
+    # 'Item' present, but 'Name' (title label) not repeated as its own header
+    body = r.get_data(as_text=True)
+    assert ">Item<" in body
+    # the Name column header should not appear (title shown in Item)
+    assert ">Name</a>" not in body and ">Name</th>" not in body
+
+
 def test_theme_css_served(client):
     r = client.get("/theme.css")
     assert r.status_code == 200

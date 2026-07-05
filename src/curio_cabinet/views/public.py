@@ -9,6 +9,7 @@ records the real, shareable URL — refresh and back-button work.
 from __future__ import annotations
 
 from dataclasses import replace
+from urllib.parse import urlencode
 
 from flask import (
     Blueprint,
@@ -54,6 +55,56 @@ def _primary_images(rows) -> dict[str, str]:
     return {r["item_id"]: r["content_hash"] for r in hits}
 
 
+def _url_dropping(drop_pairs=(), drop_keys=()) -> str:
+    """Current query string with specific (key,value) pairs or whole keys
+    removed (and paging reset). Used for one-click chip removal."""
+    drop_keys = set(drop_keys) | {"page"}
+    out: list[tuple[str, str]] = []
+    for key in request.args:
+        for value in request.args.getlist(key):
+            if key in drop_keys or (key, value) in drop_pairs:
+                continue
+            out.append((key, value))
+    qs = urlencode(out)
+    return "?" + qs if qs else request.path
+
+
+def _active_filters(registry, args) -> list[dict]:
+    """Human-readable chips for every active filter, each with a remove URL."""
+    chips: list[dict] = []
+    if args.get("q"):
+        chips.append({
+            "label": "Search", "value": args["q"],
+            "url": _url_dropping(drop_keys=["q"]),
+        })
+    for f in registry.multi_filter_fields:
+        for v in args.getlist(f"f.{f.key}"):
+            chips.append({
+                "label": f.label, "value": v,
+                "url": _url_dropping(drop_pairs=[(f"f.{f.key}", v)]),
+            })
+    for f in registry.range_filter_fields:
+        lo, hi = args.get(f"min_{f.key}"), args.get(f"max_{f.key}")
+        if not lo and not hi:
+            continue
+        unit = ""
+        if f.unit and f.unit.display:
+            unit = f" {f.unit.display[0]}"
+        elif f.unit and f.unit.label:
+            unit = f" {f.unit.label}"
+        if lo and hi:
+            text = f"{lo}–{hi}{unit}"
+        elif lo:
+            text = f"≥ {lo}{unit}"
+        else:
+            text = f"≤ {hi}{unit}"
+        chips.append({
+            "label": f.label, "value": text,
+            "url": _url_dropping(drop_keys=[f"min_{f.key}", f"max_{f.key}"]),
+        })
+    return chips
+
+
 def _browse_context():
     registry = g.registry
     params = parse_params(registry, request.args)
@@ -73,6 +124,7 @@ def _browse_context():
 
     total = count_items(g.db, registry, params)
 
+    title_field = registry.collection.title_field
     ctx = {
         "view": view,
         "params": params,
@@ -81,6 +133,11 @@ def _browse_context():
         "args": request.args,
         "query_string": request.query_string.decode(),
         "active_preset": preset.key if preset else None,
+        "chips": _active_filters(registry, request.args),
+        # fields the user may show/hide in table columns or on cards
+        "pickable_fields": [
+            f for f in registry.fields if f.in_detail and f.key != title_field
+        ],
     }
 
     if view == "pivot":
@@ -109,7 +166,9 @@ def _browse_context():
         rows = g.db.execute(sql, binds).fetchall()
         ctx.update(rows=rows, thumbs=_primary_images(rows))
         if view == "table":
-            # column precedence: explicit ?col= > preset columns > defaults
+            # column precedence: explicit ?col= > preset columns > defaults.
+            # The title field is always shown as the sticky "Item" column, so
+            # exclude it here to avoid a duplicate column.
             requested = [c for c in request.args.getlist("col") if c in registry.by_key]
             if requested:
                 keys = requested
@@ -117,7 +176,21 @@ def _browse_context():
                 keys = list(preset.columns)
             else:
                 keys = list(registry.table_default_keys)
+            keys = [k for k in keys if k != title_field]
             ctx["columns"] = [registry.by_key[c] for c in keys]
+            ctx["field_param"] = "col"
+            ctx["selected_field_keys"] = keys
+        elif view == "cards":
+            # card meta fields: ?cardf= override > config `card: secondary`
+            requested = [c for c in request.args.getlist("cardf") if c in registry.by_key]
+            default = [
+                f.key for f in registry.card_fields
+                if f.card_slot == "secondary" and f.key != title_field
+            ]
+            keys = requested or default
+            ctx["card_fields"] = [registry.by_key[c] for c in keys]
+            ctx["field_param"] = "cardf"
+            ctx["selected_field_keys"] = keys
     return ctx
 
 
