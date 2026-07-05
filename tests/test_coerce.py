@@ -63,7 +63,9 @@ def test_enum_case_normalizes_and_accepts_new_when_lax():
 def test_enum_strict_rejects_unknown():
     strict_cfg = make_config()
     field = next(f for f in strict_cfg.fields if f.key == "kind")
-    strict_field = field.model_copy(update={"strict": True})
+    import dataclasses
+
+    strict_field = dataclasses.replace(field, strict=True)
     with pytest.raises(CoercionError):
         coerce_value(strict_field, "Doohickey")
     assert coerce_value(strict_field, "gadget") == "Gadget"

@@ -1,34 +1,51 @@
-"""Collection config: pydantic models, YAML loading, validation.
+"""Collection config: models, YAML loading, validation.
 
 The parsed, validated config is the single source of truth for the DB
 schema, write validation, query whitelists, and every view. Nothing else
 in the engine may hard-code a field name.
 
+Implemented with the standard library only (frozen dataclasses + explicit
+validation) so the engine stays pure-Python and ``pip install``s cleanly on
+constrained hosts — no Rust/compiled config dependency.
+
 Per-type view defaults live here (``default_views``) and nowhere else;
-the config reference docs are generated from these models.
+the config reference docs are generated from them.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import re
+from dataclasses import dataclass, field as dc_field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import yaml
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    StrictBool,
-    field_validator,
-    model_validator,
-)
 
 from .units import DIMENSIONS
 
-__all__ = ["ConfigError", "CollectionConfig", "FieldSpec", "GroupSpec", "load_config"]
+__all__ = [
+    "ConfigError",
+    "CollectionConfig",
+    "CollectionMeta",
+    "FieldSpec",
+    "FieldType",
+    "GroupSpec",
+    "PresetSpec",
+    "WhenSpec",
+    "UnitSpec",
+    "ViewsSpec",
+    "default_views",
+    "load_config",
+    "ENGINE_COLS",
+    "RESERVED_KEYS",
+    "RESERVED_TABLES",
+    "SQL_TYPES",
+]
+
+_KEY_RE = re.compile(r"[a-z][a-z0-9_]*")
 
 
 class ConfigError(ValueError):
@@ -78,53 +95,129 @@ SQL_KEYWORDS = {
     "else", "end", "as", "on", "in", "is", "between", "exists", "distinct",
 }
 
-CardSlot = Literal["primary", "secondary", "hidden"]
-FilterKind = Literal["none", "multi", "range"]
-PivotOp = Literal["group", "avg", "min", "max", "sum"]
+CARD_SLOTS = ("primary", "secondary", "hidden")
+FILTER_KINDS = ("none", "multi", "range")
+PIVOT_OPS = ("group", "avg", "min", "max", "sum")
 
 
-class UnitSpec(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+# -- small validation helpers -------------------------------------------------
 
+
+def _mapping(raw: Any, ctx: str) -> dict:
+    if not isinstance(raw, dict):
+        raise ValueError(f"{ctx}: expected a mapping")
+    return raw
+
+
+def _reject_unknown(raw: dict, allowed: set[str], ctx: str) -> None:
+    extra = set(raw) - allowed
+    if extra:
+        raise ValueError(f"{ctx}: unknown key(s): {', '.join(sorted(extra))}")
+
+
+def _str(raw: dict, key: str, ctx: str, *, required: bool = True,
+         default: str | None = None) -> str | None:
+    if key not in raw or raw[key] is None:
+        if required:
+            raise ValueError(f"{ctx}: {key!r} is required")
+        return default
+    v = raw[key]
+    if not isinstance(v, str):
+        raise ValueError(f"{ctx}: {key!r} must be text")
+    return v
+
+
+def _bool(raw: dict, key: str, ctx: str, default: bool = False) -> bool:
+    if key not in raw or raw[key] is None:
+        return default
+    v = raw[key]
+    if not isinstance(v, bool):
+        raise ValueError(f"{ctx}: {key!r} must be true or false")
+    return v
+
+
+def _str_tuple(raw: dict, key: str, ctx: str) -> tuple[str, ...]:
+    v = raw.get(key)
+    if v is None:
+        return ()
+    if not isinstance(v, (list, tuple)):
+        raise ValueError(f"{ctx}: {key!r} must be a list")
+    return tuple(str(x) for x in v)
+
+
+def _one_of(value: Any, options: tuple[str, ...], ctx: str) -> str:
+    if value not in options:
+        raise ValueError(f"{ctx}: must be one of {', '.join(options)} (got {value!r})")
+    return value
+
+
+# -- specs --------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class UnitSpec:
     dimension: str | None = None
     store: str | None = None
     display: tuple[str, ...] = ()
     label: str | None = None  # display-only suffix, no conversion (e.g. "g/m", "%")
 
-    @model_validator(mode="after")
-    def _check(self) -> "UnitSpec":
-        if self.label is not None:
-            if self.dimension or self.store or self.display:
-                raise ValueError("unit: use either label OR dimension/store/display")
-            return self
-        if not self.dimension or not self.store:
-            raise ValueError("unit: dimension and store are both required")
-        if self.dimension not in DIMENSIONS:
-            raise ValueError(f"unit: unknown dimension {self.dimension!r}")
-        units = DIMENSIONS[self.dimension]
-        for u in (self.store, *self.display):
+    @classmethod
+    def from_raw(cls, raw: Any, ctx: str) -> "UnitSpec":
+        raw = _mapping(raw, ctx)
+        _reject_unknown(raw, {"dimension", "store", "display", "label"}, ctx)
+        label = _str(raw, "label", ctx, required=False)
+        if label is not None:
+            if raw.get("dimension") or raw.get("store") or raw.get("display"):
+                raise ValueError(f"{ctx}: use either label OR dimension/store/display")
+            return cls(label=label)
+        dimension = _str(raw, "dimension", ctx)
+        store = _str(raw, "store", ctx)
+        if dimension not in DIMENSIONS:
+            raise ValueError(f"{ctx}: unknown dimension {dimension!r}")
+        units = DIMENSIONS[dimension]
+        display = _str_tuple(raw, "display", ctx) or (store,)
+        for u in (store, *display):
             if u not in units:
-                raise ValueError(f"unit: {u!r} is not a {self.dimension} unit")
-        return self
-
-    @model_validator(mode="after")
-    def _default_display(self) -> "UnitSpec":
-        if self.store and not self.display:
-            object.__setattr__(self, "display", (self.store,))
-        return self
+                raise ValueError(f"{ctx}: {u!r} is not a {dimension} unit")
+        return cls(dimension=dimension, store=store, display=tuple(display))
 
 
-class ViewsSpec(BaseModel):
-    """Where a field appears. Unset values fall back to per-type defaults."""
+@dataclass(frozen=True)
+class ViewsSpec:
+    """Where a field appears. Unset (None) values fall back to per-type defaults."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    table: bool | None = None
+    card: str | None = None
+    detail: bool | None = None
+    filter: str | None = None
+    sort: bool | None = None
+    pivot: tuple[str, ...] | None = None
 
-    table: StrictBool | None = None       # default False: new fields never silently join the public table
-    card: CardSlot | None = None
-    detail: StrictBool | None = None
-    filter: FilterKind | None = None
-    sort: StrictBool | None = None
-    pivot: tuple[PivotOp, ...] | None = None
+    @classmethod
+    def from_raw(cls, raw: Any, ctx: str) -> "ViewsSpec":
+        if raw is None:
+            return cls()
+        raw = _mapping(raw, ctx)
+        _reject_unknown(raw, {"table", "card", "detail", "filter", "sort", "pivot"}, ctx)
+        card = raw.get("card")
+        if card is not None:
+            _one_of(card, CARD_SLOTS, f"{ctx}.card")
+        filt = raw.get("filter")
+        if filt is not None:
+            _one_of(filt, FILTER_KINDS, f"{ctx}.filter")
+        pivot = raw.get("pivot")
+        if pivot is not None:
+            pivot = tuple(pivot)
+            for op in pivot:
+                _one_of(op, PIVOT_OPS, f"{ctx}.pivot")
+        return cls(
+            table=None if "table" not in raw else _bool(raw, "table", ctx),
+            card=card,
+            detail=None if "detail" not in raw else _bool(raw, "detail", ctx),
+            filter=filt,
+            sort=None if "sort" not in raw else _bool(raw, "sort", ctx),
+            pivot=pivot,
+        )
 
 
 def default_views(ftype: FieldType) -> dict[str, Any]:
@@ -144,48 +237,74 @@ def default_views(ftype: FieldType) -> dict[str, Any]:
     }
 
 
-class FieldSpec(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
+@dataclass(frozen=True)
+class FieldSpec:
     key: str
     label: str
     type: FieldType
-    required: StrictBool = False
+    required: bool = False
     default: Any = None
-    searchable: StrictBool = False
+    searchable: bool = False
     unit: UnitSpec | None = None
     link: str | None = None            # text fields: render as link to this url field
     values: tuple[str, ...] = ()       # enum only
-    strict: StrictBool = False         # enum only: reject values outside `values`
-    rename_from: str | None = None     # migration hint; consumed only if the old column exists
-    views: ViewsSpec = ViewsSpec()
+    strict: bool = False               # enum only: reject values outside `values`
+    rename_from: str | None = None     # migration hint; used only if the old column exists
+    views: ViewsSpec = dc_field(default_factory=ViewsSpec)
 
-    @field_validator("key")
     @classmethod
-    def _key_shape(cls, v: str) -> str:
-        import re
+    def from_raw(cls, raw: Any) -> "FieldSpec":
+        raw = _mapping(raw, "field")
+        _reject_unknown(
+            raw,
+            {"key", "label", "type", "required", "default", "searchable", "unit",
+             "link", "values", "strict", "rename_from", "views"},
+            "field",
+        )
+        key = _str(raw, "key", "field")
+        if not _KEY_RE.fullmatch(key):
+            raise ValueError(f"field key {key!r} must be snake_case ([a-z][a-z0-9_]*)")
+        if key in RESERVED_KEYS:
+            raise ValueError(f"field key {key!r} is reserved by the engine")
+        if key in SQL_KEYWORDS:
+            raise ValueError(f"field key {key!r} is a SQL keyword; pick another name")
+        ctx = f"field {key!r}"
 
-        if not re.fullmatch(r"[a-z][a-z0-9_]*", v):
-            raise ValueError(f"field key {v!r} must be snake_case ([a-z][a-z0-9_]*)")
-        if v in RESERVED_KEYS:
-            raise ValueError(f"field key {v!r} is reserved by the engine")
-        if v in SQL_KEYWORDS:
-            raise ValueError(f"field key {v!r} is a SQL keyword; pick another name")
-        return v
+        type_raw = _str(raw, "type", ctx)
+        try:
+            ftype = FieldType(type_raw)
+        except ValueError:
+            raise ValueError(f"{ctx}: unknown type {type_raw!r}") from None
 
-    @model_validator(mode="after")
-    def _type_consistency(self) -> "FieldSpec":
-        if self.unit and self.type not in (FieldType.number, FieldType.integer):
-            raise ValueError(f"field {self.key!r}: unit only applies to number/integer")
-        if self.values and self.type is not FieldType.enum:
-            raise ValueError(f"field {self.key!r}: values only applies to enum")
-        if self.type is FieldType.enum and not self.values:
-            raise ValueError(f"field {self.key!r}: enum needs values")
-        if self.searchable and self.type not in (
+        unit = UnitSpec.from_raw(raw["unit"], f"{ctx}.unit") if raw.get("unit") else None
+        values = _str_tuple(raw, "values", ctx)
+
+        spec = cls(
+            key=key,
+            label=_str(raw, "label", ctx),
+            type=ftype,
+            required=_bool(raw, "required", ctx),
+            default=raw.get("default"),
+            searchable=_bool(raw, "searchable", ctx),
+            unit=unit,
+            link=_str(raw, "link", ctx, required=False),
+            values=values,
+            strict=_bool(raw, "strict", ctx),
+            rename_from=_str(raw, "rename_from", ctx, required=False),
+            views=ViewsSpec.from_raw(raw.get("views"), f"{ctx}.views"),
+        )
+
+        if spec.unit and spec.type not in (FieldType.number, FieldType.integer):
+            raise ValueError(f"{ctx}: unit only applies to number/integer")
+        if spec.values and spec.type is not FieldType.enum:
+            raise ValueError(f"{ctx}: values only applies to enum")
+        if spec.type is FieldType.enum and not spec.values:
+            raise ValueError(f"{ctx}: enum needs values")
+        if spec.searchable and spec.type not in (
             FieldType.text, FieldType.longtext, FieldType.tags
         ):
-            raise ValueError(f"field {self.key!r}: searchable only applies to text-like fields")
-        return self
+            raise ValueError(f"{ctx}: searchable only applies to text-like fields")
+        return spec
 
     # Effective view settings (per-type defaults applied) -----------------
 
@@ -224,20 +343,25 @@ class FieldSpec(BaseModel):
         return SQL_TYPES[self.type]
 
 
-class WhenSpec(BaseModel):
-    """Structured visibility condition for a group: eq or in only (v0)."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
+@dataclass(frozen=True)
+class WhenSpec:
+    """Structured condition for a group's visibility or a preset's filter:
+    exactly one of eq / in."""
 
     field: str
     eq: Any = None
-    in_: tuple[Any, ...] | None = Field(default=None, alias="in")
+    in_: tuple[Any, ...] | None = None
 
-    @model_validator(mode="after")
-    def _one_op(self) -> "WhenSpec":
-        if (self.eq is None) == (self.in_ is None):
-            raise ValueError("when: exactly one of eq/in is required")
-        return self
+    @classmethod
+    def from_raw(cls, raw: Any, ctx: str) -> "WhenSpec":
+        raw = _mapping(raw, ctx)
+        _reject_unknown(raw, {"field", "eq", "in"}, ctx)
+        field = _str(raw, "field", ctx)
+        eq = raw.get("eq")
+        in_ = tuple(raw["in"]) if raw.get("in") is not None else None
+        if (eq is None) == (in_ is None):
+            raise ValueError(f"{ctx}: exactly one of eq/in is required")
+        return cls(field=field, eq=eq, in_=in_)
 
     def matches(self, item: dict[str, Any]) -> bool:
         value = item.get(self.field)
@@ -246,34 +370,54 @@ class WhenSpec(BaseModel):
         return value in (self.in_ or ())
 
 
-class GroupSpec(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
+@dataclass(frozen=True)
+class GroupSpec:
     key: str
     label: str
     fields: tuple[str, ...]
     when: WhenSpec | None = None
 
+    @classmethod
+    def from_raw(cls, raw: Any) -> "GroupSpec":
+        raw = _mapping(raw, "group")
+        _reject_unknown(raw, {"key", "label", "fields", "when"}, "group")
+        key = _str(raw, "key", "group")
+        ctx = f"group {key!r}"
+        when = WhenSpec.from_raw(raw["when"], f"{ctx}.when") if raw.get("when") else None
+        return cls(
+            key=key,
+            label=_str(raw, "label", ctx),
+            fields=_str_tuple(raw, "fields", ctx),
+            when=when,
+        )
 
-class PresetSpec(BaseModel):
+
+@dataclass(frozen=True)
+class PresetSpec:
     """A named "specialty table": a row filter + a curated column set,
     surfaced as a tab above the table view (e.g. Whips, Floggers)."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
     key: str
     label: str
     filter: WhenSpec
     columns: tuple[str, ...]
 
-    @field_validator("key")
     @classmethod
-    def _key_shape(cls, v: str) -> str:
-        import re
-
-        if not re.fullmatch(r"[a-z][a-z0-9_]*", v):
-            raise ValueError(f"preset key {v!r} must be snake_case")
-        return v
+    def from_raw(cls, raw: Any) -> "PresetSpec":
+        raw = _mapping(raw, "preset")
+        _reject_unknown(raw, {"key", "label", "filter", "columns"}, "preset")
+        key = _str(raw, "key", "preset")
+        if not _KEY_RE.fullmatch(key):
+            raise ValueError(f"preset key {key!r} must be snake_case")
+        ctx = f"preset {key!r}"
+        if not raw.get("filter"):
+            raise ValueError(f"{ctx}: filter is required")
+        return cls(
+            key=key,
+            label=_str(raw, "label", ctx),
+            filter=WhenSpec.from_raw(raw["filter"], f"{ctx}.filter"),
+            columns=_str_tuple(raw, "columns", ctx),
+        )
 
     def filter_values(self) -> tuple[str, ...]:
         if self.filter.eq is not None:
@@ -281,163 +425,209 @@ class PresetSpec(BaseModel):
         return tuple(str(v) for v in (self.filter.in_ or ()))
 
 
-class IdSpec(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    strategy: Literal["sequential"] = "sequential"
+@dataclass(frozen=True)
+class IdSpec:
+    strategy: str = "sequential"
     width: int = 4
 
+    @classmethod
+    def from_raw(cls, raw: Any) -> "IdSpec":
+        if raw is None:
+            return cls()
+        raw = _mapping(raw, "collection.id")
+        _reject_unknown(raw, {"strategy", "width"}, "collection.id")
+        strategy = raw.get("strategy", "sequential")
+        _one_of(strategy, ("sequential",), "collection.id.strategy")
+        width = raw.get("width", 4)
+        if not isinstance(width, int) or isinstance(width, bool) or width < 1:
+            raise ValueError("collection.id.width must be a positive integer")
+        return cls(strategy=strategy, width=width)
 
-class SortSpec(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
+@dataclass(frozen=True)
+class SortSpec:
     field: str
-    order: Literal["asc", "desc"] = "asc"
+    order: str = "asc"
+
+    @classmethod
+    def from_raw(cls, raw: Any) -> "SortSpec":
+        raw = _mapping(raw, "collection.default_sort")
+        _reject_unknown(raw, {"field", "order"}, "collection.default_sort")
+        order = raw.get("order", "asc")
+        _one_of(order, ("asc", "desc"), "collection.default_sort.order")
+        return cls(field=_str(raw, "field", "collection.default_sort"), order=order)
 
 
-class CollectionMeta(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
+@dataclass(frozen=True)
+class CollectionMeta:
     title: str
     slug: str
-    id: IdSpec = IdSpec()
     title_field: str
     default_sort: SortSpec
+    id: IdSpec = dc_field(default_factory=IdSpec)
     accent_hue: int | None = None
 
-    @field_validator("slug")
     @classmethod
-    def _slug_shape(cls, v: str) -> str:
-        import re
+    def from_raw(cls, raw: Any) -> "CollectionMeta":
+        raw = _mapping(raw, "collection")
+        _reject_unknown(
+            raw,
+            {"title", "slug", "id", "title_field", "default_sort", "accent_hue"},
+            "collection",
+        )
+        slug = _str(raw, "slug", "collection")
+        if not _KEY_RE.fullmatch(slug):
+            raise ValueError(f"slug {slug!r} must be [a-z][a-z0-9_]*")
+        if slug in RESERVED_TABLES or slug.startswith("sqlite_"):
+            raise ValueError(f"slug {slug!r} collides with an engine table")
+        hue = raw.get("accent_hue")
+        if hue is not None and (not isinstance(hue, int) or isinstance(hue, bool)):
+            raise ValueError("collection.accent_hue must be an integer")
+        if "default_sort" not in raw:
+            raise ValueError("collection: 'default_sort' is required")
+        return cls(
+            title=_str(raw, "title", "collection"),
+            slug=slug,
+            title_field=_str(raw, "title_field", "collection"),
+            default_sort=SortSpec.from_raw(raw["default_sort"]),
+            id=IdSpec.from_raw(raw.get("id")),
+            accent_hue=hue,
+        )
 
-        if not re.fullmatch(r"[a-z][a-z0-9_]*", v):
-            raise ValueError(f"slug {v!r} must be [a-z][a-z0-9_]*")
-        if v in RESERVED_TABLES or v.startswith("sqlite_"):
-            raise ValueError(f"slug {v!r} collides with an engine table")
-        return v
 
-
-class CollectionConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
+@dataclass(frozen=True)
+class CollectionConfig:
     collection: CollectionMeta
     fields: tuple[FieldSpec, ...]
     groups: tuple[GroupSpec, ...] = ()
     presets: tuple[PresetSpec, ...] = ()
 
-    @model_validator(mode="after")
-    def _cross_checks(self) -> "CollectionConfig":
-        keys = [f.key for f in self.fields]
-        dupes = {k for k in keys if keys.count(k) > 1}
-        if dupes:
-            raise ValueError(f"duplicate field keys: {sorted(dupes)}")
-        by_key = {f.key: f for f in self.fields}
+    @classmethod
+    def from_raw(cls, raw: Any) -> "CollectionConfig":
+        raw = _mapping(raw, "config")
+        _reject_unknown(raw, {"collection", "fields", "groups", "presets"}, "config")
+        if "collection" not in raw:
+            raise ValueError("config: 'collection' section is required")
+        collection = CollectionMeta.from_raw(raw["collection"])
 
-        for name in ("title_field",):
-            if getattr(self.collection, name) not in by_key:
-                raise ValueError(f"collection.{name} references unknown field")
-        if self.collection.default_sort.field not in by_key:
-            raise ValueError("collection.default_sort references unknown field")
+        fields_raw = raw.get("fields")
+        if not isinstance(fields_raw, list) or not fields_raw:
+            raise ValueError("config: 'fields' must be a non-empty list")
+        fields = tuple(FieldSpec.from_raw(f) for f in fields_raw)
 
-        for f in self.fields:
-            if f.link is not None:
-                target = by_key.get(f.link)
-                if target is None or target.type is not FieldType.url:
-                    raise ValueError(f"field {f.key!r}: link must name a url field")
+        groups = tuple(GroupSpec.from_raw(g) for g in (raw.get("groups") or ()))
+        presets = tuple(PresetSpec.from_raw(p) for p in (raw.get("presets") or ()))
 
-        grouped: dict[str, str] = {}
-        for g in self.groups:
-            for key in g.fields:
-                if key not in by_key:
-                    raise ValueError(f"group {g.key!r} references unknown field {key!r}")
-                if key in grouped:
-                    raise ValueError(
-                        f"field {key!r} appears in groups {grouped[key]!r} and {g.key!r}"
-                    )
-                grouped[key] = g.key
-            if g.when and g.when.field not in by_key:
-                raise ValueError(f"group {g.key!r}: when references unknown field")
-
-        preset_keys: set[str] = set()
-        for p in self.presets:
-            if p.key in preset_keys:
-                raise ValueError(f"duplicate preset key: {p.key!r}")
-            preset_keys.add(p.key)
-            if p.filter.field not in by_key:
-                raise ValueError(
-                    f"preset {p.key!r}: filter references unknown field "
-                    f"{p.filter.field!r}"
-                )
-            if not p.columns:
-                raise ValueError(f"preset {p.key!r}: needs at least one column")
-            for col in p.columns:
-                if col not in by_key:
-                    raise ValueError(
-                        f"preset {p.key!r}: unknown column {col!r}"
-                    )
-
-        # Every field must render somewhere: ungrouped fields go to an
-        # implicit trailing "Other" group so they can never be invisible.
-        leftover = tuple(k for k in keys if k not in grouped)
-        if leftover:
-            extra = GroupSpec(key="other", label="Other", fields=leftover)
-            if any(g.key == "other" for g in self.groups):
-                raise ValueError(
-                    f"fields {leftover} are not in any group, and the group key "
-                    "'other' is taken — assign them explicitly"
-                )
-            object.__setattr__(self, "groups", (*self.groups, extra))
-        return self
-
-    @model_validator(mode="after")
-    def _label_collisions(self) -> "CollectionConfig":
-        """Labels double as CSV headers; ambiguous mappings corrupt imports."""
-        taken: dict[str, str] = {}
-        for f in self.fields:
-            for name in {f.key.lower(), f.label.lower()}:
-                owner = taken.get(name)
-                if owner is not None and owner != f.key:
-                    raise ValueError(
-                        f"field {f.key!r}: key/label {name!r} collides with "
-                        f"field {owner!r} (labels must be unambiguous)"
-                    )
-                taken[name] = f.key
-        return self
-
-    @model_validator(mode="after")
-    def _defaults_coerce(self) -> "CollectionConfig":
-        """A default that can't pass the field's own coercion is a config bug."""
-        from .coerce import CoercionError, coerce_value  # deferred: avoids cycle
-
-        for f in self.fields:
-            if f.default is None:
-                continue
-            try:
-                coerce_value(f, f.default)
-            except CoercionError as exc:
-                raise ValueError(f"field {f.key!r}: invalid default: {exc.reason}")
-        return self
+        groups = _validate(collection, fields, groups, presets)
+        return cls(collection=collection, fields=fields, groups=groups, presets=presets)
 
     def schema_snapshot(self) -> list[dict[str, Any]]:
         """Logical schema (type + unit identity) recorded in _meta and used
         for drift detection — SQLite affinity alone can't see longtext→tags
         or a unit.store change."""
-        snapshot = []
-        for f in self.fields:
-            snapshot.append(
-                {
-                    "key": f.key,
-                    "type": f.type.value,
-                    "store": f.unit.store if f.unit else None,
-                    "dimension": f.unit.dimension if f.unit else None,
-                }
-            )
-        return snapshot
+        return [
+            {
+                "key": f.key,
+                "type": f.type.value,
+                "store": f.unit.store if f.unit else None,
+                "dimension": f.unit.dimension if f.unit else None,
+            }
+            for f in self.fields
+        ]
 
     def sha(self) -> str:
         """Stable hash of the schema-relevant parts, recorded in _meta."""
         payload = json.dumps(self.schema_snapshot(), separators=(",", ":"))
         return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def _validate(
+    collection: CollectionMeta,
+    fields: tuple[FieldSpec, ...],
+    groups: tuple[GroupSpec, ...],
+    presets: tuple[PresetSpec, ...],
+) -> tuple[GroupSpec, ...]:
+    """Cross-field validation. Returns the group list with an implicit
+    "Other" group appended for any ungrouped fields."""
+    keys = [f.key for f in fields]
+    dupes = {k for k in keys if keys.count(k) > 1}
+    if dupes:
+        raise ValueError(f"duplicate field keys: {sorted(dupes)}")
+    by_key = {f.key: f for f in fields}
+
+    if collection.title_field not in by_key:
+        raise ValueError("collection.title_field references unknown field")
+    if collection.default_sort.field not in by_key:
+        raise ValueError("collection.default_sort references unknown field")
+
+    for f in fields:
+        if f.link is not None:
+            target = by_key.get(f.link)
+            if target is None or target.type is not FieldType.url:
+                raise ValueError(f"field {f.key!r}: link must name a url field")
+
+    grouped: dict[str, str] = {}
+    for g in groups:
+        for key in g.fields:
+            if key not in by_key:
+                raise ValueError(f"group {g.key!r} references unknown field {key!r}")
+            if key in grouped:
+                raise ValueError(
+                    f"field {key!r} appears in groups {grouped[key]!r} and {g.key!r}"
+                )
+            grouped[key] = g.key
+        if g.when and g.when.field not in by_key:
+            raise ValueError(f"group {g.key!r}: when references unknown field")
+
+    preset_keys: set[str] = set()
+    for p in presets:
+        if p.key in preset_keys:
+            raise ValueError(f"duplicate preset key: {p.key!r}")
+        preset_keys.add(p.key)
+        if p.filter.field not in by_key:
+            raise ValueError(
+                f"preset {p.key!r}: filter references unknown field {p.filter.field!r}"
+            )
+        if not p.columns:
+            raise ValueError(f"preset {p.key!r}: needs at least one column")
+        for col in p.columns:
+            if col not in by_key:
+                raise ValueError(f"preset {p.key!r}: unknown column {col!r}")
+
+    # labels double as CSV headers; ambiguous key/label mappings corrupt imports
+    taken: dict[str, str] = {}
+    for f in fields:
+        for name in {f.key.lower(), f.label.lower()}:
+            owner = taken.get(name)
+            if owner is not None and owner != f.key:
+                raise ValueError(
+                    f"field {f.key!r}: key/label {name!r} collides with "
+                    f"field {owner!r} (labels must be unambiguous)"
+                )
+            taken[name] = f.key
+
+    # a default that can't pass the field's own coercion is a config bug
+    from .coerce import CoercionError, coerce_value  # deferred: avoids import cycle
+
+    for f in fields:
+        if f.default is None:
+            continue
+        try:
+            coerce_value(f, f.default)
+        except CoercionError as exc:
+            raise ValueError(f"field {f.key!r}: invalid default: {exc.reason}")
+
+    # every field must render somewhere: ungrouped fields go to an implicit
+    # trailing "Other" group so they can never be silently invisible
+    leftover = tuple(k for k in keys if k not in grouped)
+    if leftover:
+        if any(g.key == "other" for g in groups):
+            raise ValueError(
+                f"fields {leftover} are not in any group, and the group key "
+                "'other' is taken — assign them explicitly"
+            )
+        groups = (*groups, GroupSpec(key="other", label="Other", fields=leftover))
+    return groups
 
 
 def load_config(path: str | Path) -> CollectionConfig:
@@ -451,6 +641,8 @@ def load_config(path: str | Path) -> CollectionConfig:
     if not isinstance(raw, dict):
         raise ConfigError(f"{path}: top level must be a mapping")
     try:
-        return CollectionConfig.model_validate(raw)
-    except Exception as exc:  # pydantic ValidationError → human message
+        return CollectionConfig.from_raw(raw)
+    except ConfigError:
+        raise
+    except ValueError as exc:
         raise ConfigError(f"{path}: {exc}") from None

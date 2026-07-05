@@ -62,7 +62,7 @@ def make_config(overrides: dict | None = None) -> CollectionConfig:
     raw = copy.deepcopy(BASE_CONFIG)
     if overrides:
         raw.update(overrides)
-    return CollectionConfig.model_validate(raw)
+    return CollectionConfig.from_raw(raw)
 
 
 @pytest.fixture
