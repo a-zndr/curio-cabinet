@@ -25,11 +25,15 @@ export CABINET_INSTANCE="$INSTANCE"
 # Single writer process. NFS storage is network-attached, so WAL's shared
 # memory is unreliable across processes — one worker with threads keeps a
 # single writer and sidesteps it. Bump threads, not workers.
+# Bind all interfaces: on NFS the proxy tier runs on a separate host and
+# reaches the daemon over the site's internal IP, not localhost. The 10.x
+# address is private (external traffic only arrives via the TLS proxy), so
+# 0.0.0.0 is safe and restart-proof (it covers whatever internal IP NFS assigns).
 exec "$VENV/bin/gunicorn" \
     --workers 1 \
     --threads 8 \
     --worker-class gthread \
-    --bind 127.0.0.1:8099 \
+    --bind 0.0.0.0:8099 \
     --timeout 60 \
     --access-logfile /home/logs/curio-access.log \
     --error-logfile /home/logs/curio-error.log \
