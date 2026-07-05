@@ -19,7 +19,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
   {% if registry.collection.accent or registry.collection.accent_hue is not none %}
-  <link rel="stylesheet" href="{{ url_for('public.theme_css') }}">
+  <link rel="stylesheet" href="{{ url_for('public.theme_css', v=theme_version) }}">
   {% endif %}
   <script defer src="{{ url_for('static', filename='vendor/htmx.min.js') }}"></script>
   <script defer src="{{ url_for('static', filename='js/app.js') }}"></script>

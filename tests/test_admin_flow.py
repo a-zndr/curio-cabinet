@@ -237,9 +237,13 @@ def test_customize_general_live(app, client):
     })
     assert r.status_code == 302
     # change is live immediately (config hot-swapped, no restart)
-    assert "My Cabinet" in client.get("/").get_data(as_text=True)
+    page = client.get("/").get_data(as_text=True)
+    assert "My Cabinet" in page
     css = client.get("/theme.css").get_data(as_text=True)
     assert "--accent-override: #3b6fd4" in css  # picked color applied
+    # the stylesheet link is versioned by the accent, so browsers refetch
+    # /theme.css on a color change instead of serving the hour-long cache
+    assert "/theme.css?v=3b6fd4" in page
 
 
 def test_customize_add_field_live(app, client):

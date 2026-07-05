@@ -157,12 +157,22 @@ def create_app(instance_root: str | None = None) -> Flask:
             qs = urlencode(pairs)
             return Markup("?" + qs if qs else request.path)
 
+        # cache-buster for /theme.css: changes exactly when the accent does,
+        # so a Customize color change shows up everywhere immediately instead
+        # of after the browser's hour-long stylesheet cache expires
+        coll = g.registry.collection
+        theme_version = (
+            f"{coll.accent or ''}"
+            f"{coll.accent_hue if coll.accent_hue is not None else ''}"
+        ).lstrip("#") or "default"
+
         return {
             "registry": g.registry,
             "csrf_token": session["csrf_token"] if session else "",
             "admin_user": session["username"] if session else None,
             "url_with": url_with,
             "MAX_SHARE_IDS": 100,
+            "theme_version": theme_version,
         }
 
     return app
