@@ -151,15 +151,24 @@ def share_list():
 
 
 def _parse_ids(raw: str) -> tuple[list[str], bool]:
+    # Bound the work: stop once we hit the cap (O(n) with a set, not O(n^2)
+    # over a growing list) so a huge ?ids= can't burn CPU on the public route.
     seen: list[str] = []
+    seen_set: set[str] = set()
+    truncated = False
     for token in raw.split(","):
         token = token.strip()
         # match the config's id charset; ignore anything hostile
-        if token and token.replace("_", "").replace("-", "").isalnum():
-            if token not in seen:
-                seen.append(token)
-    truncated = len(seen) > MAX_SHARE_IDS
-    return seen[:MAX_SHARE_IDS], truncated
+        if not token or not token.replace("_", "").replace("-", "").isalnum():
+            continue
+        if token in seen_set:
+            continue
+        if len(seen) >= MAX_SHARE_IDS:
+            truncated = True
+            break
+        seen.append(token)
+        seen_set.add(token)
+    return seen, truncated
 
 
 def _og_for(item_id: str, gallery) -> dict:

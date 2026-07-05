@@ -36,7 +36,7 @@
       <tbody>
         {% for row in pivot_rows %}
           <tr>
-            <td class="pivot-label" style="--bar: {{ (row['n'] / pivot_max * 100)|round(1) }}%">{{ row['grp'] }}</td>
+            <td class="pivot-label" data-bar="{{ (row['n'] / pivot_max * 100)|round(1) }}">{{ row['grp'] }}</td>
             <td class="num">{{ row['n'] }}</td>
             {% if agg_op != 'count' %}<td class="num">{{ row['val'] if row['val'] is not none else '–' }}</td>{% endif %}
           </tr>

@@ -289,18 +289,31 @@ def set_focal_point(
     image_id: int,
     focal_x: float,
     focal_y: float,
-) -> None:
+) -> bool:
+    """Set an image's focal point and regenerate its OG crop.
+
+    Returns False (without regenerating) when the same photo is used by other
+    items: OG files are content-addressed and shared, so rewriting one would
+    silently change every item using that image. The caller can surface this.
+    """
     focal_x = max(0.0, min(1.0, focal_x))
     focal_y = max(0.0, min(1.0, focal_y))
     row = conn.execute("SELECT * FROM images WHERE id = ?", (image_id,)).fetchone()
     if row is None:
-        return
+        return False
     conn.execute(
         "UPDATE images SET focal_x = ?, focal_y = ? WHERE id = ?",
         (focal_x, focal_y, image_id),
     )
     conn.commit()
+    (shared,) = conn.execute(
+        "SELECT COUNT(*) FROM images WHERE content_hash = ? AND id != ?",
+        (row["content_hash"], image_id),
+    ).fetchone()
+    if shared:
+        return False
     regenerate_og(images_dir, row["content_hash"], (focal_x, focal_y))
+    return True
 
 
 def remove_image(

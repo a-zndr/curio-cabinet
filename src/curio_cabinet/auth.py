@@ -202,17 +202,39 @@ def check_password(
 _DELAYS = (0, 0, 2, 8, 30, 60, 300)
 
 
-def device_token(secret: str, username: str) -> str:
-    """Stable HMAC tag marking a browser that has signed in before."""
-    return hmac.new(
-        secret.encode(), f"known-device:{username}".encode(), hashlib.sha256
-    ).hexdigest()
+DEVICE_MAX_AGE = _dt.timedelta(days=30)
 
 
-def verify_device_token(secret: str, username: str, token: str | None) -> bool:
-    if not token:
+def _device_sig(secret: str, username: str, pw_changed_at: str, issued: str) -> str:
+    msg = f"known-device:{username}:{pw_changed_at}:{issued}".encode()
+    return hmac.new(secret.encode(), msg, hashlib.sha256).hexdigest()
+
+
+def issue_device_token(secret: str, username: str, pw_changed_at: str) -> str:
+    """Mint a device token for a browser that just authenticated.
+
+    Bound to the account's password_changed_at (so a password change or CLI
+    reset revokes every device token) and stamped with an issue time (so it
+    expires). It is NOT a permanent credential: it only lets a returning
+    browser skip the anti-lockout throttle, and it dies on any credential
+    change or after DEVICE_MAX_AGE.
+    """
+    issued = _ts(_now())
+    return f"{issued}.{_device_sig(secret, username, pw_changed_at, issued)}"
+
+
+def verify_device_token(
+    secret: str, username: str, pw_changed_at: str, token: str | None
+) -> bool:
+    if not token or "." not in token:
         return False
-    return hmac.compare_digest(device_token(secret, username), token)
+    issued, _, sig = token.partition(".")
+    if not hmac.compare_digest(_device_sig(secret, username, pw_changed_at, issued), sig):
+        return False
+    try:
+        return _now() - _parse_ts(issued) <= DEVICE_MAX_AGE
+    except ValueError:
+        return False
 
 
 def login_delay_remaining(conn: sqlite3.Connection, username: str) -> int:

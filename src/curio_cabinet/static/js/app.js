@@ -34,6 +34,16 @@
     if (form && !confirm(form.dataset.confirm)) event.preventDefault();
   });
 
+  // Pivot bar widths — set from a data attribute, not an inline style
+  // (which the strict CSP would block).
+  function paintPivotBars() {
+    document.querySelectorAll(".pivot-label[data-bar]").forEach(function (el) {
+      el.style.setProperty("--bar", el.dataset.bar + "%");
+    });
+  }
+  document.addEventListener("DOMContentLoaded", paintPivotBars);
+  document.body.addEventListener("htmx:afterSwap", paintPivotBars);
+
   // Conditional form groups (group.when in the config) ----------------------
   function syncConditionalGroups() {
     document.querySelectorAll("[data-when-field]").forEach(function (group) {

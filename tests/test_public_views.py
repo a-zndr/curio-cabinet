@@ -153,6 +153,16 @@ def test_share_list_ignores_hostile_ids(client):
     assert "2 items" in body
 
 
+def test_share_list_ids_capped_without_quadratic_blowup(client):
+    # a huge id list must be bounded (no O(n^2) scan): cap at MAX_SHARE_IDS
+    from curio_cabinet.views.public import MAX_SHARE_IDS, _parse_ids
+
+    raw = ",".join(f"id{i}" for i in range(200_000))
+    ids, truncated = _parse_ids(raw)
+    assert len(ids) == MAX_SHARE_IDS
+    assert truncated is True
+
+
 def test_image_route_rejects_bad_input(client):
     assert client.get("/images/nothex/thumb").status_code == 404
     assert client.get("/images/" + "a" * 64 + "/evil").status_code == 404

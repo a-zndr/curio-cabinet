@@ -22,7 +22,9 @@ __all__ = ["ImportReport", "import_csv", "export_csv", "next_id"]
 
 # Cells starting with these can execute as formulas when the CSV is opened
 # in Excel/Sheets; we prefix a ' on export and strip it back on import.
-_FORMULA_PREFIXES = ("=", "+", "@", "\t")
+# (OWASP set: = + - @ TAB CR. Leading whitespace is stripped on import, so
+# TAB/CR can't survive to a stored value, but we neutralize on export anyway.)
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
 
 
 @dataclass

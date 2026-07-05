@@ -168,15 +168,17 @@ def test_tags_with_embedded_comma_round_trip(conn, registry):
     assert row["materials"] == '["oak, aged", "brass"]'
 
 
-def test_formula_cells_neutralized_and_restored(conn, registry):
-    report = import_csv(conn, registry, "name,notes\n=HYPERLINK(1),hi\n")
+@pytest.mark.parametrize("payload", ["=HYPERLINK(1)", "-2+3+cmd", "@SUM(A1)", "+1"])
+def test_formula_cells_neutralized_and_restored(conn, registry, payload):
+    conn.execute('DELETE FROM "things"')
+    report = import_csv(conn, registry, f"name,notes\n{payload},hi\n")
     assert report.imported == 1
     text = export_csv(conn, registry)
-    assert "'=HYPERLINK" in text  # neutralized on disk
+    assert ("'" + payload) in text  # neutralized on disk (leading apostrophe)
     conn.execute('DELETE FROM "things"')
     import_csv(conn, registry, text)
     row = conn.execute('SELECT "name" FROM "things"').fetchone()
-    assert row["name"] == "=HYPERLINK(1)"  # restored on import
+    assert row["name"] == payload  # restored on import
 
 
 # -- query hardening ---------------------------------------------------------------
@@ -231,11 +233,29 @@ def test_dotenv_inline_comment_stripped(tmp_path):
 
 
 def test_known_device_token_roundtrip():
-    token = auth.device_token("secret", "zee")
-    assert auth.verify_device_token("secret", "zee", token)
-    assert not auth.verify_device_token("secret", "zee", token[:-2] + "xx")
-    assert not auth.verify_device_token("secret", "other", token)
-    assert not auth.verify_device_token("secret", "zee", None)
+    pw = "2026-01-01T00:00:00Z"
+    token = auth.issue_device_token("secret", "zee", pw)
+    assert auth.verify_device_token("secret", "zee", pw, token)
+    assert not auth.verify_device_token("secret", "zee", pw, token[:-2] + "xx")
+    assert not auth.verify_device_token("secret", "other", pw, token)
+    assert not auth.verify_device_token("secret", "zee", pw, None)
+
+
+def test_device_token_revoked_by_password_change():
+    # bound to password_changed_at, so a password reset invalidates it
+    token = auth.issue_device_token("secret", "zee", "2026-01-01T00:00:00Z")
+    assert not auth.verify_device_token("secret", "zee", "2026-06-01T00:00:00Z", token)
+
+
+def test_device_token_expires():
+    import datetime as _dt
+
+    old = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=31)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    pw = "2026-01-01T00:00:00Z"
+    stale = f"{old}.{auth._device_sig('secret', 'zee', pw, old)}"
+    assert not auth.verify_device_token("secret", "zee", pw, stale)
 
 
 def test_known_device_bypasses_username_throttle():
@@ -247,6 +267,7 @@ def test_known_device_bypasses_username_throttle():
         auth.record_attempt(db, "zee", None, success=False)
     # attacker (no device cookie) is throttled hard
     assert auth.login_delay_remaining(db, "zee") > 60
-    # the admin's own browser presents a valid device token and skips the
-    # throttle at the view layer — validated by the token check itself
-    assert auth.verify_device_token("s", "zee", auth.device_token("s", "zee"))
+    # the admin's own browser presents a valid, revocable device token
+    pw = db.execute("SELECT password_changed_at FROM users").fetchone()[0]
+    token = auth.issue_device_token("s", "zee", pw)
+    assert auth.verify_device_token("s", "zee", pw, token)

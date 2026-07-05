@@ -43,19 +43,35 @@ def device_cookie_name() -> str:
     return "__Host-device" if current_app.config["COOKIE_SECURE"] else "cc_device"
 
 
+def _pw_changed_at(username: str) -> str | None:
+    row = g.db.execute(
+        "SELECT password_changed_at FROM users WHERE username = ?", (username,)
+    ).fetchone()
+    return row["password_changed_at"] if row else None
+
+
 def _is_known_device(username: str) -> bool:
+    pw_changed = _pw_changed_at(username)
+    if pw_changed is None:
+        return False
     return auth.verify_device_token(
         current_app.config["SECRET_KEY"],
         username,
+        pw_changed,
         request.cookies.get(device_cookie_name()),
     )
 
 
 def _set_device_cookie(resp: Response, username: str) -> Response:
+    pw_changed = _pw_changed_at(username)
+    if pw_changed is None:
+        return resp
     resp.set_cookie(
         device_cookie_name(),
-        auth.device_token(current_app.config["SECRET_KEY"], username),
-        max_age=365 * 24 * 3600,
+        auth.issue_device_token(
+            current_app.config["SECRET_KEY"], username, pw_changed
+        ),
+        max_age=int(auth.DEVICE_MAX_AGE.total_seconds()),
         secure=current_app.config["COOKIE_SECURE"],
         httponly=True,
         samesite="Lax",
@@ -287,10 +303,16 @@ def item_delete(item_id: str):
 # Images -------------------------------------------------------------------------
 
 
+MAX_UPLOAD_FILES = 12  # bound in-request Pillow work so one POST can't wedge the worker
+
+
 @bp.post("/items/<item_id>/images")
 def item_images_upload(item_id: str):
     _item_or_404(item_id)
     files = request.files.getlist("images")
+    if len(files) > MAX_UPLOAD_FILES:
+        flash(f"Upload up to {MAX_UPLOAD_FILES} images at a time.", "error")
+        files = files[:MAX_UPLOAD_FILES]
     stored_any = False
     for file in files:
         data = file.read()
@@ -346,7 +368,8 @@ def image_focal(image_id: int):
         fy = float(request.form.get("y", ""))
     except ValueError:
         abort(400)
-    images.set_focal_point(g.db, g.inst.images_dir, image_id, fx, fy)
+    if not images.set_focal_point(g.db, g.inst.images_dir, image_id, fx, fy):
+        flash("This photo is shared by other items; its crop wasn't changed.", "error")
     return redirect(url_for("admin.item_edit", item_id=row["item_id"]))
 
 
