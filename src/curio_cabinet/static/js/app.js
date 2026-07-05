@@ -34,6 +34,18 @@
     if (form && !confirm(form.dataset.confirm)) event.preventDefault();
   });
 
+  // View switcher lives outside the swapped #results region, so its active
+  // state must be reconciled from the URL after each swap / history nav.
+  function syncViewSwitch() {
+    var current = new URLSearchParams(location.search).get("view") || "cards";
+    document.querySelectorAll(".seg[data-view]").forEach(function (el) {
+      el.classList.toggle("is-active", el.dataset.view === current);
+    });
+  }
+  document.addEventListener("DOMContentLoaded", syncViewSwitch);
+  document.body.addEventListener("htmx:afterSwap", syncViewSwitch);
+  window.addEventListener("popstate", syncViewSwitch);
+
   // Pivot bar widths — set from a data attribute, not an inline style
   // (which the strict CSP would block).
   function paintPivotBars() {

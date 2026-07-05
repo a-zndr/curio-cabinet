@@ -23,7 +23,7 @@
       <div class="view-switch" role="tablist" aria-label="View">
         {% for v, label in [('cards','Cards'), ('table','Table'), ('pivot','Pivot')] %}
           {% set vurl = url_with(view=v) %}
-          <a class="seg {{ 'is-active' if view == v }}" role="tab"
+          <a class="seg {{ 'is-active' if view == v }}" role="tab" data-view="{{ v }}"
              href="{{ vurl }}" hx-get="{{ vurl }}"
              hx-target="#results" hx-select="#results" hx-swap="outerHTML" hx-push-url="true">{{ label }}</a>
         {% endfor %}
