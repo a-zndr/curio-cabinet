@@ -1,49 +1,109 @@
-{# Pivot: one GROUP BY, rendered as a compact table with an inline bar. #}
-<div class="pivot">
-  <form class="pivot-controls" method="get" hx-get="{{ url_for('public.index') }}"
-        hx-target="#results" hx-select="#results" hx-swap="outerHTML"
-        hx-push-url="true" hx-trigger="change">
-    <input type="hidden" name="view" value="pivot">
-    <label>Group by
-      <select name="group">
-        {% for f in registry.pivot_group_fields %}
-          <option value="{{ f.key }}" {{ 'selected' if f.key == group_key }}>{{ f.label }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Measure
-      <select name="op">
-        <option value="count" {{ 'selected' if agg_op == 'count' }}>Count</option>
-        {% for f in registry.pivot_agg_fields %}
-          {% for op in f.pivot_ops if op != 'group' %}
-            <option value="{{ op }}" data-field="{{ f.key }}"
-              {{ 'selected' if agg_op == op and agg_key == f.key }}>{{ op|capitalize }} of {{ f.label }}</option>
+{# Analytics: breakdown bar chart + numeric distribution histogram.
+   Bar sizes come from data-bar (set as --bar by app.js) so the strict CSP
+   (no inline styles) holds. Everything derives from the field config. #}
+<div class="analyze">
+  <div class="analyze-modes" role="tablist" aria-label="Analysis">
+    {% set burl = url_with(mode='breakdown') %}
+    <a class="seg {{ 'is-active' if mode == 'breakdown' }}" role="tab" href="{{ burl }}"
+       hx-get="{{ burl }}" hx-target="#results" hx-select="#results" hx-swap="outerHTML" hx-push-url="true">Breakdown</a>
+    {% if agg_fields %}
+      {% set durl = url_with(mode='distribution') %}
+      <a class="seg {{ 'is-active' if mode == 'distribution' }}" role="tab" href="{{ durl }}"
+         hx-get="{{ durl }}" hx-target="#results" hx-select="#results" hx-swap="outerHTML" hx-push-url="true">Distribution</a>
+    {% endif %}
+  </div>
+
+  {% if mode == 'distribution' %}
+    <form class="analyze-controls" data-owns="view mode group measure sort dist"
+          hx-get="{{ url_for('public.index') }}" hx-target="#results"
+          hx-select="#results" hx-swap="outerHTML" hx-push-url="true" hx-trigger="change">
+      <input type="hidden" name="view" value="pivot">
+      <input type="hidden" name="mode" value="distribution">
+      <label>Distribution of
+        <select name="dist">
+          {% for f in agg_fields %}
+            <option value="{{ f.key }}" {{ 'selected' if f.key == dist_key }}>{{ f.label }}</option>
           {% endfor %}
-        {% endfor %}
-      </select>
-    </label>
-    {% if agg_op != 'count' %}<input type="hidden" name="agg" value="{{ agg_key }}">{% endif %}
-  </form>
+        </select>
+      </label>
+    </form>
 
-  {% set group_field = registry.by_key.get(group_key) %}
-  {% if group_field and group_field.type.value == 'tags' %}
-    <p class="hint">Items with multiple {{ group_field.label|lower }} appear in more than one group.</p>
-  {% endif %}
-
-  {% if pivot_rows %}
-    <table class="pivot-table">
-      <thead><tr><th>{{ group_field.label if group_field }}</th><th class="num">Items</th>{% if agg_op != 'count' %}<th class="num">{{ agg_op|capitalize }}</th>{% endif %}</tr></thead>
-      <tbody>
-        {% for row in pivot_rows %}
-          <tr>
-            <td class="pivot-label" data-bar="{{ (row['n'] / pivot_max * 100)|round(1) }}">{{ row['grp'] }}</td>
-            <td class="num">{{ row['n'] }}</td>
-            {% if agg_op != 'count' %}<td class="num">{{ row['val'] if row['val'] is not none else '–' }}</td>{% endif %}
-          </tr>
+    {% if hist_bars %}
+      <div class="histo" role="img" aria-label="Distribution histogram">
+        {% for b in hist_bars %}
+          <div class="histo-col" title="{{ b.lo }}–{{ b.hi }} {{ hist_unit }}: {{ b.count }} item{{ '' if b.count == 1 else 's' }}">
+            <span class="histo-count">{{ b.count or '' }}</span>
+            <span class="histo-bar" data-bar="{{ b.bar }}"></span>
+          </div>
         {% endfor %}
-      </tbody>
-    </table>
+      </div>
+      <div class="histo-axis">
+        <span>{{ hist_stats.lo }}</span>
+        <span class="histo-unit">{{ hist_unit }}</span>
+        <span>{{ hist_stats.hi }}</span>
+      </div>
+      <p class="hint">{{ hist_n }} item{{ '' if hist_n == 1 else 's' }} with a value.</p>
+    {% else %}
+      <div class="empty-state">
+        <p class="empty-head">Not enough data to chart</p>
+        <p class="hint">{{ hist_n }} item{{ '' if hist_n == 1 else 's' }} have a value for this field — need a few more, with some spread, to show a distribution.</p>
+      </div>
+    {% endif %}
+
   {% else %}
-    {% include "_empty.html" %}
+    <form class="analyze-controls" data-owns="view mode group measure sort dist"
+          hx-get="{{ url_for('public.index') }}" hx-target="#results"
+          hx-select="#results" hx-swap="outerHTML" hx-push-url="true" hx-trigger="change">
+      <input type="hidden" name="view" value="pivot">
+      <input type="hidden" name="mode" value="breakdown">
+      <label>Break down by
+        <select name="group">
+          {% for f in group_fields %}
+            <option value="{{ f.key }}" {{ 'selected' if f.key == group_key }}>{{ f.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Measure
+        <select name="measure">
+          <option value="count" {{ 'selected' if measure == 'count' }}>Item count</option>
+          {% for f in agg_fields %}
+            <optgroup label="{{ f.label }}">
+              {% for op in f.pivot_ops if op != 'group' %}
+                {% set token = f.key ~ ':' ~ op %}
+                <option value="{{ token }}" {{ 'selected' if measure == token }}>{{ op|capitalize }} of {{ f.label }}</option>
+              {% endfor %}
+            </optgroup>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Sort
+        <select name="sort">
+          <option value="value" {{ 'selected' if sort != 'label' }}>By measure</option>
+          <option value="label" {{ 'selected' if sort == 'label' }}>By name</option>
+        </select>
+      </label>
+    </form>
+
+    {% set group_field = registry.by_key.get(group_key) %}
+    {% if group_field and group_field.type.value == 'tags' %}
+      <p class="hint">Items with multiple {{ group_field.label|lower }} count in more than one row.</p>
+    {% endif %}
+
+    {% if pivot_rows %}
+      <div class="hchart">
+        {% for row in pivot_rows %}
+          <div class="hbar-row">
+            <span class="hbar-label" title="{{ row.label }}">{{ row.label }}</span>
+            <span class="hbar-track"><span class="hbar" data-bar="{{ row.bar }}"></span></span>
+            <span class="hbar-value">
+              {% if row.value_text %}{{ row.value_text }} <span class="hbar-sub">· {{ row.count }}</span>
+              {% else %}{{ row.count }}{% endif %}
+            </span>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      {% include "_empty.html" %}
+    {% endif %}
   {% endif %}
 </div>

@@ -24,7 +24,7 @@ fields:
     label: Maker
     type: text
     link: site
-    views: {table: true, card: secondary, filter: multi}
+    views: {table: true, card: secondary, filter: multi, pivot: [group]}
   - key: site
     label: Site
     type: url
@@ -228,6 +228,40 @@ def test_table_excludes_title_column(client):
     assert ">Item<" in body
     # the Name column header should not appear (title shown in Item)
     assert ">Name</a>" not in body and ">Name</th>" not in body
+
+
+def test_pivot_breakdown_measure_returns_data(client):
+    # regression: non-count measures used to return "no matches" because the
+    # field never travelled with the op. measure=length:avg must produce bars.
+    r = client.get("/?view=pivot&group=maker&measure=length:avg")
+    body = r.get_data(as_text=True)
+    assert r.status_code == 200
+    assert "hbar" in body                      # a bar chart rendered
+    assert "No matches" not in body            # not the empty state
+    assert " in" in body                       # aggregate shown in display units
+    assert "Acme" in body and "Globex" in body
+
+
+def test_pivot_bad_measure_falls_back_to_count(client):
+    # a malformed / disallowed measure must not 500 or blank out — fall back
+    r = client.get("/?view=pivot&group=maker&measure=bogus:avg")
+    body = r.get_data(as_text=True)
+    assert r.status_code == 200 and "hbar" in body
+
+
+def test_pivot_distribution(client):
+    r = client.get("/?view=pivot&mode=distribution&dist=length")
+    body = r.get_data(as_text=True)
+    assert r.status_code == 200
+    assert "histo" in body  # histogram (3 spread values -> chartable)
+
+
+def test_pivot_respects_filters(client):
+    # analytics reflect the active filter set: only the Globex bar remains
+    r = client.get("/?view=pivot&group=maker&measure=count&f.maker=Globex")
+    body = r.get_data(as_text=True)
+    assert 'title="Globex"' in body       # a bar row for Globex
+    assert 'title="Acme"' not in body     # Acme filtered out of the chart
 
 
 def test_theme_css_served(client):

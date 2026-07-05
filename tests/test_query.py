@@ -113,6 +113,26 @@ def test_pivot_rejects_unregistered(populated, registry):
         )
 
 
+def test_histogram(populated, registry):
+    from curio_cabinet.query import histogram
+
+    # lengths present: 100, 50, 200 (stored cm)
+    h = histogram(populated, registry, parse_params(registry, {}), "length")
+    assert h["n"] == 3 and h["lo"] == 50.0 and h["hi"] == 200.0
+    assert isinstance(h["bins"], list) and sum(h["bins"]) == 3
+    assert len(h["edges"]) == len(h["bins"]) + 1
+
+
+def test_histogram_too_sparse(populated, registry):
+    from curio_cabinet.query import histogram
+
+    # only one item has a plait_count-like value -> not chartable
+    insert_thing(populated, "0099", name="Solo", count=5)
+    populated.commit()
+    h = histogram(populated, registry, parse_params(registry, {}), "count")
+    assert h is not None and h["bins"] is None  # too few values to bin
+
+
 def test_filter_options(populated, registry):
     opts = filter_options(populated, registry)
     assert opts["multi"]["kind"] == ["Gadget", "Widget"]

@@ -22,13 +22,17 @@ from flask import (
 )
 
 from .. import images
+from ..config import FieldType
+from ..coerce import display_value
 from ..query import (
     build_select,
     count_items,
     filter_options,
+    histogram,
     parse_params,
     pivot,
 )
+from ..units import convert
 
 bp = Blueprint("public", __name__)
 
@@ -105,6 +109,109 @@ def _active_filters(registry, args) -> list[dict]:
     return chips
 
 
+def _parse_measure(measure: str, registry) -> tuple[str | None, str]:
+    """Composite 'field:op' -> (field, op); anything else -> count. Validates
+    against the field's declared pivot ops (this is the fix for the old bug
+    where the op arrived without a field)."""
+    if not measure or measure == "count" or ":" not in measure:
+        return None, "count"
+    key, _, op = measure.partition(":")
+    field = registry.by_key.get(key)
+    if field is None or op not in field.pivot_ops or op == "group":
+        return None, "count"
+    return key, op
+
+
+def _group_label(field, grp: str) -> str:
+    if field is not None and field.type is FieldType.boolean:
+        return {"1": "Yes", "0": "No"}.get(str(grp), "(unknown)")
+    return "(none)" if grp == "—" else grp
+
+
+def _to_display(field, value: float) -> float:
+    unit = field.unit if field else None
+    if unit and unit.dimension and unit.store and unit.display:
+        return round(convert(value, unit.store, unit.display[0], unit.dimension), 1)
+    return round(value, 2)
+
+
+def _pivot_context(registry, params) -> dict:
+    agg_fields = registry.pivot_agg_fields
+    group_fields = registry.pivot_group_fields
+    mode = request.args.get("mode", "breakdown")
+    if mode != "distribution" or not agg_fields:
+        mode = "breakdown"
+    ctx: dict = {
+        "mode": mode,
+        "group_fields": group_fields,
+        "agg_fields": agg_fields,
+    }
+
+    if mode == "distribution":
+        keys = {f.key for f in agg_fields}
+        dist_key = request.args.get("dist")
+        if dist_key not in keys:
+            dist_key = agg_fields[0].key
+        hist = histogram(g.db, registry, params, dist_key)
+        bars, unit_label, stats = [], "", None
+        if hist and hist.get("bins"):
+            f = hist["field"]
+            hmax = hist["max"] or 1
+            for i, c in enumerate(hist["bins"]):
+                bars.append({
+                    "count": c,
+                    "bar": round(c / hmax * 100, 1),
+                    "lo": _to_display(f, hist["edges"][i]),
+                    "hi": _to_display(f, hist["edges"][i + 1]),
+                })
+            u = f.unit
+            unit_label = (u.display[0] if u and u.display else (u.label if u and u.label else ""))
+            stats = {"n": hist["n"], "lo": _to_display(f, hist["lo"]), "hi": _to_display(f, hist["hi"])}
+        ctx.update(dist_key=dist_key, hist_bars=bars, hist_unit=unit_label,
+                   hist_stats=stats, hist_n=(hist["n"] if hist else 0))
+        return ctx
+
+    # breakdown
+    gkeys = {f.key for f in group_fields}
+    group_key = request.args.get("group")
+    if group_key not in gkeys:
+        group_key = group_fields[0].key if group_fields else None
+    measure = request.args.get("measure", "count")
+    agg_key, agg_op = _parse_measure(measure, registry)
+    sort = "label" if request.args.get("sort") == "label" else "value"
+
+    rows = []
+    if group_key:
+        try:
+            rows = pivot(g.db, registry, params, group_key=group_key,
+                         agg_op=agg_op, agg_key=agg_key)
+        except ValueError:
+            agg_key, agg_op, measure = None, "count", "count"
+            rows = pivot(g.db, registry, params, group_key=group_key, agg_op="count")
+
+    gfield = registry.by_key.get(group_key)
+    agg_field = registry.by_key.get(agg_key) if agg_key else None
+    disp = []
+    for r in rows:
+        bar_val = (r["val"] if agg_op != "count" else r["n"]) or 0
+        value_text = None
+        if agg_op != "count" and r["val"] is not None:
+            value_text = display_value(agg_field, r["val"]) if agg_field else str(r["val"])
+        disp.append({
+            "label": _group_label(gfield, r["grp"]),
+            "count": r["n"], "bar_val": bar_val, "value_text": value_text,
+        })
+    disp.sort(key=(lambda d: str(d["label"]).lower()) if sort == "label"
+              else (lambda d: d["bar_val"]), reverse=(sort != "label"))
+    bar_max = max((d["bar_val"] for d in disp), default=0) or 1
+    for d in disp:
+        d["bar"] = round(d["bar_val"] / bar_max * 100, 1)
+
+    ctx.update(pivot_rows=disp, group_key=group_key, measure=measure,
+               agg_op=agg_op, sort=sort)
+    return ctx
+
+
 def _browse_context():
     registry = g.registry
     params = parse_params(registry, request.args)
@@ -141,26 +248,7 @@ def _browse_context():
     }
 
     if view == "pivot":
-        group_key = request.args.get("group") or (
-            registry.pivot_group_fields[0].key if registry.pivot_group_fields else None
-        )
-        agg_key = request.args.get("agg") or ""
-        agg_op = request.args.get("op", "count")
-        rows, max_n = [], 1
-        if group_key:
-            try:
-                rows = pivot(
-                    g.db, registry, params,
-                    group_key=group_key, agg_op=agg_op,
-                    agg_key=agg_key or None,
-                )
-            except ValueError:
-                rows, agg_op = [], "count"
-            max_n = max((r["n"] for r in rows), default=1)
-        ctx.update(
-            pivot_rows=rows, pivot_max=max_n,
-            group_key=group_key, agg_key=agg_key, agg_op=agg_op,
-        )
+        ctx.update(_pivot_context(registry, params))
     else:
         sql, binds = build_select(registry, params)
         rows = g.db.execute(sql, binds).fetchall()

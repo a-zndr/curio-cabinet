@@ -234,6 +234,51 @@ def pivot(
     return conn.execute(sql, binds).fetchall()
 
 
+def histogram(
+    conn: sqlite3.Connection,
+    registry: FieldRegistry,
+    params: QueryParams,
+    field_key: str,
+    *,
+    max_bins: int = 12,
+) -> dict[str, Any] | None:
+    """Distribution of a numeric field over the filtered rows. Returns bin
+    counts (respecting active filters), or None if there's too little data to
+    chart. Values are bucketed in stored units; the caller converts edge
+    labels to display units."""
+    import math
+
+    field = registry.by_key.get(field_key)
+    if field is None or field.type not in (FieldType.number, FieldType.integer):
+        return None
+
+    where, binds = _where(registry, params)
+    col = _col(registry, field_key)
+    vals = [
+        r["v"]
+        for r in conn.execute(
+            f"SELECT {col} AS v {_from(registry)}{where}", binds
+        ).fetchall()
+        if r["v"] is not None
+    ]
+    n = len(vals)
+    lo, hi = (min(vals), max(vals)) if vals else (0.0, 0.0)
+    if n < 3 or lo == hi:
+        return {"field": field, "n": n, "lo": lo, "hi": hi, "bins": None}
+
+    bins = min(max_bins, max(5, math.ceil(math.sqrt(n))))
+    width = (hi - lo) / bins
+    counts = [0] * bins
+    for v in vals:
+        idx = int((v - lo) / width)
+        counts[min(idx, bins - 1)] += 1
+    edges = [lo + i * width for i in range(bins + 1)]
+    return {
+        "field": field, "n": n, "lo": lo, "hi": hi,
+        "bins": counts, "edges": edges, "width": width, "max": max(counts),
+    }
+
+
 def filter_options(
     conn: sqlite3.Connection, registry: FieldRegistry
 ) -> dict[str, Any]:

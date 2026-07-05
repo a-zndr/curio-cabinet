@@ -660,19 +660,75 @@ thead .col-sticky { z-index: 4; }
 .facet-range input { width: 100%; }
 .range-dash { color: var(--text-faint); }
 
-/* Pivot ---------------------------------------------------------------------- */
+/* Analytics (breakdown chart + distribution histogram) ---------------------- */
 
-.pivot-controls { display: flex; flex-wrap: wrap; gap: var(--space-4); margin-bottom: var(--space-4); }
-.pivot-controls label { font-size: var(--text-sm); color: var(--text-muted); display: flex; flex-direction: column; gap: 2px; }
-.pivot-controls select { min-width: 160px; }
-.pivot-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
-.pivot-table th { text-align: left; color: var(--text-muted); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--border-strong); }
-.pivot-table th.num, .pivot-table td.num { text-align: right; font-family: var(--font-mono); }
-.pivot-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); }
-.pivot-label {
-  position: relative;
-  background: linear-gradient(to right, var(--accent-soft) var(--bar, 0%), transparent var(--bar, 0%));
+.analyze-modes {
+  display: inline-flex;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin-bottom: var(--space-4);
 }
+.analyze-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+.analyze-controls label { font-size: var(--text-sm); color: var(--text-muted); display: flex; flex-direction: column; gap: 3px; }
+.analyze-controls select { min-width: 180px; }
+
+/* Horizontal breakdown bar chart */
+.hchart { display: flex; flex-direction: column; gap: var(--space-2); }
+.hbar-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 26%) 1fr auto;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+}
+.hbar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.hbar-track { background: var(--surface-raised); border-radius: var(--radius-sm); height: 22px; overflow: hidden; }
+.hbar {
+  display: block;
+  height: 100%;
+  width: var(--bar, 0%);
+  min-width: 2px;
+  background: var(--accent);
+  border-radius: var(--radius-sm);
+  transition: width var(--dur) var(--ease);
+}
+.hbar-value { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.hbar-sub { color: var(--text-faint); font-size: var(--text-xs); }
+
+/* Vertical distribution histogram */
+.histo {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 200px;
+  padding-top: var(--space-4);
+}
+.histo-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 3px; }
+.histo-count { font-size: var(--text-xs); color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.histo-bar {
+  width: 100%;
+  height: var(--bar, 0%);
+  min-height: 2px;
+  background: var(--accent);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  transition: height var(--dur) var(--ease);
+}
+.histo-axis {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+.histo-axis .histo-unit { color: var(--text-faint); }
 
 /* Mobile bar + sheet + tray -------------------------------------------------- */
 

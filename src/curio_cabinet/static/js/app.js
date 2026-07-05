@@ -75,15 +75,16 @@
   document.body.addEventListener("htmx:afterSwap", syncViewSwitch);
   window.addEventListener("popstate", syncViewSwitch);
 
-  // Pivot bar widths — set from a data attribute, not an inline style
-  // (which the strict CSP would block).
-  function paintPivotBars() {
-    document.querySelectorAll(".pivot-label[data-bar]").forEach(function (el) {
+  // Chart bar sizes — set as a CSS custom property from data-bar, since the
+  // strict CSP blocks inline style="width/height:x%". CSS maps --bar to the
+  // right dimension per chart (bar width, histogram column height, etc.).
+  function paintBars() {
+    document.querySelectorAll("[data-bar]").forEach(function (el) {
       el.style.setProperty("--bar", el.dataset.bar + "%");
     });
   }
-  document.addEventListener("DOMContentLoaded", paintPivotBars);
-  document.body.addEventListener("htmx:afterSwap", paintPivotBars);
+  document.addEventListener("DOMContentLoaded", paintBars);
+  document.body.addEventListener("htmx:afterSwap", paintBars);
 
   // Conditional form groups (group.when in the config) ----------------------
   function syncConditionalGroups() {
