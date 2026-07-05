@@ -1,0 +1,131 @@
+{% extends "admin/_base.html" %}
+{% block title %}To-Dos · {{ registry.collection.title }}{% endblock %}
+{% block main_class %}page{% endblock %}
+
+{% macro status_chip(e) -%}
+  {%- if e.status == 'never' -%}<span class="todo-chip st-overdue">never done</span>
+  {%- elif e.status == 'overdue' -%}<span class="todo-chip st-overdue">{{ -e.days_until }}d overdue</span>
+  {%- elif e.status == 'soon' -%}<span class="todo-chip st-soon">due in {{ e.days_until }}d</span>
+  {%- else -%}<span class="todo-chip st-ok">in {{ e.days_until }}d</span>
+  {%- endif -%}
+{%- endmacro %}
+
+{% block content %}
+<div class="page-head"><h1>To-Dos</h1></div>
+
+{% if not schedule %}
+  <p class="muted">No maintenance schedules yet. Give a date field a cadence
+  (“Remind every N days”) in
+  <a href="{{ url_for('admin.customize', tab='fields') }}">Customize → Fields</a>
+  — e.g. a <em>Last driven</em> date that reminds every 60 days.</p>
+{% else %}
+
+<nav class="view-switch">
+  {% for v, lbl in [('list','List'), ('gantt','Timeline'), ('calendar','Calendar'), ('buckets','Due soon')] %}
+    <a class="seg {{ 'is-active' if view == v }}" href="{{ url_for('admin.todos', view=v) }}">{{ lbl }}</a>
+  {% endfor %}
+</nav>
+
+{# ---- List: batch "mark done" per field ---- #}
+{% if view == 'list' %}
+  {% for grp in schedule %}
+  <form method="post" action="{{ url_for('admin.maintenance_done') }}" class="todo-group">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="field" value="{{ grp.field.key }}">
+    <div class="todo-group-head">
+      <h3>{{ grp.field.label }} <span class="hint-inline">every {{ grp.field.every_days }} days</span></h3>
+      <div class="todo-done-controls">
+        <input type="date" name="done_date" value="{{ today }}" aria-label="Done on">
+        <button class="btn btn-sm btn-primary" type="submit">Mark done</button>
+      </div>
+    </div>
+    <ul class="todo-list">
+      {% for e in grp.entries %}
+      <li>
+        <label class="chk">
+          <input type="checkbox" name="item_ids" value="{{ e.id }}">
+          <span class="mono muted">{{ e.id }}</span> {{ e.title }}
+        </label>
+        {{ status_chip(e) }}
+      </li>
+      {% endfor %}
+    </ul>
+  </form>
+  {% endfor %}
+
+{# ---- Timeline / Gantt: one swimlane per field ---- #}
+{% elif view == 'gantt' %}
+  <p class="hint">Each bar spans an item’s current cycle (last done → next due). The line is today.</p>
+  {% for lane in gantt.lanes %}
+  <section class="gantt-lane">
+    <h3>{{ lane.field.label }}</h3>
+    <div class="gantt-axis"><span>{{ gantt.start }}</span><span>today</span><span>{{ gantt.end }}</span></div>
+    <div class="gantt-rows">
+      {% for bar in lane.bars %}
+      <div class="gantt-row">
+        <a class="gantt-label" href="{{ url_for('admin.item_edit', item_id=bar.id) }}">
+          <span class="mono muted">{{ bar.id }}</span> {{ bar.title }}
+        </a>
+        <div class="gantt-track">
+          <svg width="100%" height="22" preserveAspectRatio="none" role="img"
+               aria-label="{{ bar.title }} {{ bar.status }}">
+            <line x1="{{ gantt.today_pct }}%" x2="{{ gantt.today_pct }}%" y1="0" y2="22" class="gantt-today"/>
+            {% if bar.x is not none %}
+              <rect x="{{ bar.x }}%" y="5" width="{{ bar.w }}%" height="12" rx="3" class="gbar st-{{ bar.status }}"/>
+            {% else %}
+              <rect x="0" y="5" width="8" height="12" rx="3" class="gbar st-overdue"/>
+            {% endif %}
+          </svg>
+        </div>
+        {{ status_chip(bar) }}
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endfor %}
+
+{# ---- Calendar: next-due placed on a month grid ---- #}
+{% elif view == 'calendar' %}
+  <div class="cal-head">
+    <a class="btn btn-sm" href="{{ url_for('admin.todos', view='calendar', month=calendar.prev) }}">← Prev</a>
+    <strong>{{ calendar.label }}</strong>
+    <a class="btn btn-sm" href="{{ url_for('admin.todos', view='calendar', month=calendar.next) }}">Next →</a>
+  </div>
+  <div class="cal-grid">
+    {% for wd in calendar.weekdays %}<div class="cal-wd">{{ wd }}</div>{% endfor %}
+    {% for week in calendar.grid %}{% for cell in week %}
+      <div class="cal-cell {{ 'cal-out' if not cell.in_month }} {{ 'cal-today' if cell.is_today }}">
+        <span class="cal-day">{{ cell.day }}</span>
+        {% for e in cell.entries %}
+        <a class="cal-ev st-{{ e.status }}" href="{{ url_for('admin.item_edit', item_id=e.id) }}"
+           title="{{ e.field }}: {{ e.title }}">{{ e.title }}</a>
+        {% endfor %}
+      </div>
+    {% endfor %}{% endfor %}
+  </div>
+
+{# ---- Due-soon triage buckets ---- #}
+{% elif view == 'buckets' %}
+  <div class="bucket-cols">
+    {% for b in buckets %}
+    <div class="bucket bucket-{{ b.key }}">
+      <h3>{{ b.label }} <span class="todo-count">{{ b.entries|length }}</span></h3>
+      <ul class="todo-list">
+        {% for e in b.entries %}
+        <li>
+          <a href="{{ url_for('admin.item_edit', item_id=e.id) }}">
+            <span class="mono muted">{{ e.id }}</span> {{ e.title }}
+          </a>
+          <span class="hint-inline">{{ e.field }}</span>
+        </li>
+        {% else %}
+        <li class="muted">—</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+  </div>
+{% endif %}
+
+{% endif %}
+{% endblock %}

@@ -355,7 +355,7 @@ input[type="file"] { border: none; padding: 0; background: none; }
   display: flex; align-items: center; justify-content: space-between;
   gap: var(--space-3); flex-wrap: wrap; margin-bottom: var(--space-2);
 }
-.todo-group-head h3 { font-size: var(--text-md); margin: 0; }
+.todo-group-head h3 { font-size: var(--text-base); margin: 0; }
 .todo-done-controls { display: flex; gap: var(--space-2); align-items: center; }
 .todo-list { list-style: none; padding: 0; margin: 0; }
 .todo-list li {
@@ -364,6 +364,71 @@ input[type="file"] { border: none; padding: 0; background: none; }
 }
 .todo-list li:last-child { border-bottom: none; }
 .todo-fill-row input, .todo-fill-row select { max-width: 180px; }
+
+/* Admin overview home */
+.overview-cards { display: flex; flex-wrap: wrap; gap: var(--space-3); margin: var(--space-4) 0; }
+.ov-card {
+  flex: 1; min-width: 160px;
+  display: flex; flex-direction: column; gap: 2px;
+  padding: var(--space-4);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-md);
+  background: var(--surface); color: var(--text);
+}
+.ov-card:hover { background: var(--accent-soft); text-decoration: none; }
+.ov-num { font-size: var(--text-2xl); font-weight: 650; line-height: 1; }
+.ov-label { font-size: var(--text-sm); color: var(--text-faint); }
+.ov-alert { border-color: var(--danger); }
+.ov-alert .ov-num { color: var(--danger); }
+.overview-links { display: flex; flex-wrap: wrap; gap: var(--space-4); margin-bottom: var(--space-6); }
+.ov-recent { margin-top: var(--space-4); }
+
+/* To-Do + Customize view switcher reuses the existing .view-switch / .seg
+   segmented control (defined below); just give it breathing room here. */
+.view-switch { margin: var(--space-3) 0; }
+
+/* To-Do status chips */
+.st-overdue { color: var(--danger); border-color: color-mix(in oklab, var(--danger) 45%, transparent); }
+.st-soon { color: var(--accent); border-color: color-mix(in oklab, var(--accent) 45%, transparent); }
+.st-ok { color: var(--text-faint); border-color: var(--border); }
+
+/* Gantt / timeline */
+.gantt-lane { margin: var(--space-4) 0; }
+.gantt-axis {
+  display: flex; justify-content: space-between;
+  font-size: var(--text-sm); color: var(--text-faint);
+  font-family: var(--font-mono); margin-bottom: 2px;
+}
+.gantt-row { display: flex; align-items: center; gap: var(--space-3); padding: 3px 0; }
+.gantt-label { flex: 0 0 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gantt-track { flex: 1; min-width: 0; }
+.gantt-today { stroke: var(--text-faint); stroke-width: 1; stroke-dasharray: 2 2; }
+.gbar.st-overdue { fill: var(--danger); }
+.gbar.st-soon { fill: var(--accent); }
+.gbar.st-ok { fill: color-mix(in oklab, var(--accent) 45%, var(--surface-raised)); }
+
+/* Calendar */
+.cal-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin: var(--space-3) 0; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); }
+.cal-wd { background: var(--surface-raised); text-align: center; font-size: var(--text-sm); font-weight: 600; padding: 4px; }
+.cal-cell { background: var(--surface); min-height: 76px; padding: 3px; display: flex; flex-direction: column; gap: 2px; }
+.cal-out { background: var(--bg); }
+.cal-out .cal-day { color: var(--text-faint); }
+.cal-today { outline: 2px solid var(--accent); outline-offset: -2px; }
+.cal-day { font-size: var(--text-sm); color: var(--text-faint); }
+.cal-ev {
+  font-size: var(--text-sm); border-radius: 3px; padding: 1px 4px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  background: var(--accent-soft); color: var(--text);
+  border-left: 3px solid var(--accent);
+}
+.cal-ev.st-overdue { border-left-color: var(--danger); }
+
+/* Due-soon buckets */
+.bucket-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--space-3); }
+.bucket { border: 1px solid var(--border-strong); border-radius: var(--radius-md); padding: var(--space-3); background: var(--surface); }
+.bucket h3 { font-size: var(--text-base); margin: 0 0 var(--space-2); }
+.bucket-overdue { border-top: 3px solid var(--danger); }
+.bucket-week { border-top: 3px solid var(--accent); }
 .private-badge {
   font-size: 0.7em;
   font-weight: 600;
@@ -497,6 +562,7 @@ input[type="file"] { border: none; padding: 0; background: none; }
 
 .view-switch {
   display: inline-flex;
+  flex-wrap: wrap;              /* longer tab sets (Customize) wrap on mobile */
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   overflow: hidden;

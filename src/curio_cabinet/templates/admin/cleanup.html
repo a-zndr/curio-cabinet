@@ -1,0 +1,46 @@
+{% extends "admin/_base.html" %}
+{% from "_fields.html" import quick_input %}
+{% block title %}Cabinet Cleanup · {{ registry.collection.title }}{% endblock %}
+{% block main_class %}page{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Cabinet Cleanup</h1></div>
+
+{% if not cleanup and not cleanup_photos %}
+<p class="muted">Everything's cataloged — nothing missing. 🎉</p>
+{% else %}
+<p class="hint">Fill a must-have field across everything that's missing it, right here — one value each, then save the batch.</p>
+
+{% for grp in cleanup %}
+<form method="post" action="{{ url_for('admin.cleanup_fill') }}" class="todo-group">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="field" value="{{ grp.field.key }}">
+  <div class="todo-group-head">
+    <h3>Missing {{ grp.field.label }} <span class="todo-count">{{ grp.entries|length }}</span></h3>
+    <button class="btn btn-sm btn-primary" type="submit">Save {{ grp.field.label }}</button>
+  </div>
+  <ul class="todo-list">
+    {% for item in grp.entries %}
+    <li class="todo-fill-row">
+      <a href="{{ url_for('admin.item_edit', item_id=item.id) }}"><span class="mono muted">{{ item.id }}</span> {{ item.title }}</a>
+      {{ quick_input(grp.field, item.id) }}
+    </li>
+    {% endfor %}
+  </ul>
+</form>
+{% endfor %}
+
+{% if cleanup_photos %}
+<div class="todo-group">
+  <div class="todo-group-head"><h3>Missing Photo <span class="todo-count">{{ cleanup_photos|length }}</span></h3></div>
+  <ul class="todo-list">
+    {% for item in cleanup_photos %}
+    <li>
+      <a href="{{ url_for('admin.item_edit', item_id=item.id) }}"><span class="mono muted">{{ item.id }}</span> {{ item.title }}</a>
+      <span class="hint-inline">add on the item page</span>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

@@ -70,9 +70,9 @@ def _login(client):
         follow_redirects=False,
     )
     assert resp.status_code == 302
-    page = client.get("/admin/").get_data(as_text=True)
+    page = client.get("/admin/customize").get_data(as_text=True)
     match = re.search(r'name="csrf_token" value="([^"]+)"', page)
-    assert match, "csrf token not found in dashboard"
+    assert match, "csrf token not found"
     return match.group(1)
 
 

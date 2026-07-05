@@ -208,12 +208,18 @@ def logout():
     return _clear_session_cookie(redirect(url_for("public.index")))
 
 
-# Dashboard -------------------------------------------------------------------
+# Overview / To-Dos / Cabinet cleanup -----------------------------------------
+
+# a maintenance date is "due soon" this many days before its next-due date
+_SOON_DAYS = 14
 
 
-def _maintenance_due(rows) -> list[dict]:
-    """Overdue maintenance grouped by date field (every_days set).
-    Each group carries its due items, most-overdue first."""
+def _maintenance_schedule(rows) -> list[dict]:
+    """Full maintenance schedule grouped by date field (every_days set).
+
+    Each entry has last-done + next-due dates and a status, so every To-Do
+    view (list, gantt, calendar, buckets) can render from one dataset.
+    """
     import datetime
 
     reg = g.registry
@@ -221,26 +227,37 @@ def _maintenance_due(rows) -> list[dict]:
     today = datetime.date.today()
     groups = []
     for f in (f for f in reg.fields if f.every_days is not None):
-        items = []
+        entries = []
         for row in rows:
             v = row[f.key]
-            if not v:
-                items.append({"id": row["id"], "title": row[title],
-                              "status": "never", "rank": 10 ** 9})
-                continue
-            try:
-                then = datetime.date.fromisoformat(str(v)[:10])
-            except ValueError:
-                items.append({"id": row["id"], "title": row[title],
-                              "status": "bad date", "rank": 10 ** 9 - 1})
-                continue
-            days = (today - then).days
-            if days > f.every_days:
-                items.append({"id": row["id"], "title": row[title],
-                              "status": f"{days}d ago", "rank": days})
-        if items:
-            items.sort(key=lambda x: -x["rank"])
-            groups.append({"field": f, "entries": items})
+            last = due = None
+            if v:
+                try:
+                    last = datetime.date.fromisoformat(str(v)[:10])
+                    # OverflowError: a near-MAXYEAR date (e.g. a 9999 typo)
+                    # pushed past date.max — treat it as unscheduled, don't 500
+                    due = last + datetime.timedelta(days=f.every_days)
+                except (ValueError, OverflowError):
+                    last = due = None
+            if due is None:
+                status, days_until, rank = "never", None, -10 ** 9
+            else:
+                days_until = (due - today).days
+                if days_until < 0:
+                    status = "overdue"
+                elif days_until <= _SOON_DAYS:
+                    status = "soon"
+                else:
+                    status = "ok"
+                rank = days_until
+            entries.append({
+                "id": row["id"], "title": row[title],
+                "last": last.isoformat() if last else None,
+                "due": due.isoformat() if due else None,
+                "days_until": days_until, "status": status, "rank": rank,
+            })
+        entries.sort(key=lambda e: e["rank"])
+        groups.append({"field": f, "entries": entries})
     return groups
 
 
@@ -267,37 +284,185 @@ def _cleanup_groups(rows, photo_ids) -> tuple[list[dict], list[dict]]:
     return field_groups, photo_items
 
 
-@bp.get("/")
-def dashboard():
+def _all_rows_and_photos():
     reg = g.registry
-    table = reg.table
-    (count,) = g.db.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()
-    recent = g.db.execute(
-        f'SELECT * FROM "{table}" ORDER BY "updated_at" DESC LIMIT 8'
-    ).fetchall()
-    rows = g.db.execute(f'SELECT * FROM "{table}" ORDER BY "id"').fetchall()
+    rows = g.db.execute(f'SELECT * FROM "{reg.table}" ORDER BY "id"').fetchall()
     photo_ids = {
         r["item_id"] for r in g.db.execute('SELECT DISTINCT "item_id" FROM images')
     }
+    return rows, photo_ids
+
+
+@bp.get("/")
+def dashboard():
+    """Lightweight overview: item count, what needs attention, and a
+    recently-updated section, with shortcuts into each area."""
+    reg = g.registry
+    rows, photo_ids = _all_rows_and_photos()
+    recent = g.db.execute(
+        f'SELECT * FROM "{reg.table}" ORDER BY "updated_at" DESC LIMIT 8'
+    ).fetchall()
+    schedule = _maintenance_schedule(rows)
+    due_count = sum(
+        1 for grp in schedule for e in grp["entries"]
+        if e["status"] in ("overdue", "never")
+    )
+    cleanup, cleanup_photos = _cleanup_groups(rows, photo_ids)
+    cleanup_count = sum(len(grp["entries"]) for grp in cleanup) + len(cleanup_photos)
+    return render_template(
+        "admin/overview.html",
+        count=len(rows),
+        recent=recent,
+        due_count=due_count,
+        cleanup_count=cleanup_count,
+        has_maintenance=bool(schedule),
+    )
+
+
+TODO_VIEWS = ("list", "gantt", "calendar", "buckets")
+
+
+@bp.get("/todos")
+def todos():
     import datetime
 
-    maintenance = _maintenance_due(rows)
-    cleanup, cleanup_photos = _cleanup_groups(rows, photo_ids)
-    return render_template(
-        "admin/dashboard.html",
-        count=count,
-        recent=recent,
-        maintenance=maintenance,
-        cleanup=cleanup,
-        cleanup_photos=cleanup_photos,
-        today=datetime.date.today().isoformat(),
-    )
+    view = request.args.get("view", "list")
+    if view not in TODO_VIEWS:
+        view = "list"
+    rows, _ = _all_rows_and_photos()
+    schedule = _maintenance_schedule(rows)
+    ctx = {
+        "view": view,
+        "schedule": schedule,
+        "today": datetime.date.today().isoformat(),
+    }
+    if view == "gantt":
+        ctx["gantt"] = _gantt_model(schedule)
+    elif view == "calendar":
+        ctx["calendar"] = _calendar_model(schedule, request.args.get("month"))
+    elif view == "buckets":
+        ctx["buckets"] = _bucket_model(schedule)
+    return render_template("admin/todos.html", **ctx)
+
+
+@bp.get("/cleanup")
+def cleanup():
+    rows, photo_ids = _all_rows_and_photos()
+    groups, photos = _cleanup_groups(rows, photo_ids)
+    return render_template("admin/cleanup.html", cleanup=groups, cleanup_photos=photos)
+
+
+def _gantt_model(schedule) -> dict:
+    """Swimlane-per-field timeline. Computes a shared date axis so every
+    lane maps a date to the same x%; entries without a cycle are flagged."""
+    import datetime
+
+    today = datetime.date.today()
+    dates = [today]
+    for grp in schedule:
+        for e in grp["entries"]:
+            for k in ("last", "due"):
+                if e[k]:
+                    dates.append(datetime.date.fromisoformat(e[k]))
+    lo, hi = min(dates), max(dates)
+    pad = max((hi - lo).days // 20, 3)
+    try:
+        lo = lo - datetime.timedelta(days=pad)
+    except OverflowError:
+        lo = datetime.date.min
+    try:
+        hi = hi + datetime.timedelta(days=pad)
+    except OverflowError:
+        hi = datetime.date.max
+    span = max((hi - lo).days, 1)
+
+    def pct(d: str) -> float:
+        return round((datetime.date.fromisoformat(d) - lo).days / span * 100, 2)
+
+    lanes = []
+    for grp in schedule:
+        bars = []
+        for e in grp["entries"]:
+            if e["last"] and e["due"]:
+                x0, x1 = pct(e["last"]), min(pct(e["due"]), 100.0)
+                bars.append({**e, "x": x0, "w": max(x1 - x0, 0.6)})
+            else:
+                bars.append({**e, "x": None, "w": None})  # never done
+        lanes.append({"field": grp["field"], "bars": bars})
+    return {
+        "lanes": lanes,
+        "today_pct": pct(today.isoformat()),
+        "start": lo.isoformat(), "end": hi.isoformat(),
+    }
+
+
+def _calendar_model(schedule, month_arg) -> dict:
+    """Month grid with each entry placed on its next-due day."""
+    import calendar as _cal
+    import datetime
+
+    today = datetime.date.today()
+    try:
+        y, m = (int(x) for x in (month_arg or "").split("-"))
+        first = datetime.date(y, m, 1)
+    except (ValueError, TypeError):
+        first = today.replace(day=1)
+    # keep clear of MINYEAR/MAXYEAR so the 6-week grid and prev/next month
+    # arithmetic can't spill past the representable date range and 500
+    if not (2 <= first.year <= 9998):
+        first = today.replace(day=1)
+    by_day: dict[int, list] = {}
+    for grp in schedule:
+        for e in grp["entries"]:
+            if not e["due"]:
+                continue
+            d = datetime.date.fromisoformat(e["due"])
+            if d.year == first.year and d.month == first.month:
+                by_day.setdefault(d.day, []).append({**e, "field": grp["field"].label})
+    weeks = _cal.Calendar(firstweekday=6).monthdatescalendar(first.year, first.month)
+    grid = [[{
+        "day": d.day,
+        "in_month": d.month == first.month,
+        "is_today": d == today,
+        "entries": by_day.get(d.day, []) if d.month == first.month else [],
+    } for d in week] for week in weeks]
+    prev = (first - datetime.timedelta(days=1)).replace(day=1)
+    nxt = (first + datetime.timedelta(days=31)).replace(day=1)
+    return {
+        "grid": grid,
+        "label": first.strftime("%B %Y"),
+        "prev": prev.strftime("%Y-%m"), "next": nxt.strftime("%Y-%m"),
+        "weekdays": ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+    }
+
+
+def _bucket_model(schedule) -> list[dict]:
+    """Triage columns: Overdue · This week · This month · Later."""
+    buckets = {"overdue": [], "week": [], "month": [], "later": []}
+    for grp in schedule:
+        for e in grp["entries"]:
+            item = {**e, "field": grp["field"].label}
+            du = e["days_until"]
+            if du is None or du < 0:
+                buckets["overdue"].append(item)
+            elif du <= 7:
+                buckets["week"].append(item)
+            elif du <= 31:
+                buckets["month"].append(item)
+            else:
+                buckets["later"].append(item)
+    return [
+        {"key": "overdue", "label": "Overdue", "entries": buckets["overdue"]},
+        {"key": "week", "label": "This week", "entries": buckets["week"]},
+        {"key": "month", "label": "This month", "entries": buckets["month"]},
+        {"key": "later", "label": "Later", "entries": buckets["later"]},
+    ]
 
 
 @bp.post("/maintenance/done")
 def maintenance_done():
     """Mark a maintenance date field as done (a chosen date) on one or more
-    items at once — the "done + when" action on the dashboard."""
+    items at once — the "done + when" action in the To-Dos list view."""
     from ..coerce import CoercionError, coerce_value
 
     reg = g.registry
@@ -306,16 +471,17 @@ def maintenance_done():
         abort(400)
     ids = request.form.getlist("item_ids")
     date_raw = request.form.get("done_date", "").strip()
+    back = redirect(url_for("admin.todos"))
     if not ids:
         flash("Select at least one item to mark done.", "error")
-        return redirect(url_for("admin.dashboard"))
+        return back
     try:
         value = coerce_value(field, date_raw)
     except CoercionError:
         value = None
     if not value:
         flash("Pick a valid date.", "error")
-        return redirect(url_for("admin.dashboard"))
+        return back
     marks = ", ".join("?" for _ in ids)
     g.db.execute(
         f'UPDATE "{reg.table}" SET {reg.quoted(field.key)} = ?, "updated_at" = ? '
@@ -324,12 +490,12 @@ def maintenance_done():
     )
     g.db.commit()
     flash(f"Marked {field.label} done on {len(ids)} item(s).")
-    return redirect(url_for("admin.dashboard"))
+    return back
 
 
 @bp.post("/cleanup/fill")
 def cleanup_fill():
-    """Fill one missing field across several items from the dashboard —
+    """Fill one missing field across several items from the cleanup page —
     per-item values (not a single bulk value), recomputing derived fields."""
     from ..coerce import CoercionError, apply_computed, coerce_value
 
@@ -372,7 +538,7 @@ def cleanup_fill():
         flash("; ".join(errors[:5]), "error")
     if saved:
         flash(f"Updated {field.label} on {saved} item(s).")
-    return redirect(url_for("admin.dashboard"))
+    return redirect(url_for("admin.cleanup"))
 
 
 # Item CRUD --------------------------------------------------------------------
@@ -731,6 +897,14 @@ _GROUP_TYPES = ("enum", "tags", "boolean", "text")
 _NUM_TYPES = ("number", "integer")
 
 
+def _customize_redirect():
+    """Back to the tab the form was submitted from (hidden `tab` field)."""
+    tab = request.form.get("tab", "general")
+    if tab not in CUSTOMIZE_TABS:
+        tab = "general"
+    return redirect(url_for("admin.customize", tab=tab))
+
+
 def _apply(new_raw: dict, ok_msg: str):
     from .. import configio
 
@@ -738,10 +912,10 @@ def _apply(new_raw: dict, ok_msg: str):
         new_inst = configio.apply_config(g.inst, new_raw)
     except configio.ConfigEditError as exc:
         flash(str(exc), "error")
-        return redirect(url_for("admin.customize"))
+        return _customize_redirect()
     current_app.config["CABINET_INSTANCE"] = new_inst
     flash(ok_msg)
-    return redirect(url_for("admin.customize"))
+    return _customize_redirect()
 
 
 def _raw():
@@ -750,16 +924,22 @@ def _raw():
     return configio.load_raw(g.inst)
 
 
+CUSTOMIZE_TABS = ("general", "fields", "add", "presets")
+
+
 @bp.get("/customize")
 def customize():
     from ..colors import oklch_to_hex
 
+    tab = request.args.get("tab", "general")
+    if tab not in CUSTOMIZE_TABS:
+        tab = "general"
     coll = g.registry.collection
     if coll.accent:
         seed = coll.accent
     else:
         seed = oklch_to_hex(0.55, 0.125, coll.accent_hue if coll.accent_hue is not None else 45)
-    return render_template("admin/customize.html", accent_seed=seed)
+    return render_template("admin/customize.html", accent_seed=seed, tab=tab)
 
 
 @bp.post("/customize/general")
@@ -907,7 +1087,7 @@ def customize_add_field():
     ftype = request.form.get("type", "text")
     if not key or not label:
         flash("A new field needs both a key and a label.", "error")
-        return redirect(url_for("admin.customize"))
+        return redirect(url_for("admin.customize", tab="add"))
 
     newf: dict = {"key": key, "label": label, "type": ftype}
     if request.form.get("private"):
@@ -949,7 +1129,7 @@ def customize_add_preset():
     ]
     if not key or not label or not field or not values or not columns:
         flash("A specialty table needs a name, a filter, and at least one column.", "error")
-        return redirect(url_for("admin.customize"))
+        return redirect(url_for("admin.customize", tab="presets"))
     preset = {
         "key": key, "label": label,
         "filter": {"field": field, "in": values},

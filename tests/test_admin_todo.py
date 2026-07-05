@@ -88,7 +88,7 @@ def _login(client):
         follow_redirects=False,
     )
     assert resp.status_code == 302
-    page = client.get("/admin/").get_data(as_text=True)
+    page = client.get("/admin/customize").get_data(as_text=True)
     match = re.search(r'name="csrf_token" value="([^"]+)"', page)
     assert match
     return match.group(1)
@@ -117,12 +117,10 @@ def test_missing_fields_grouped_under_cabinet_cleanup(client):
         "csrf_token": csrf, "name": "Bare", "last_driven": driven,
     })
 
-    body = client.get("/admin/").get_data(as_text=True)
-    assert "To do" in body and "Cabinet cleanup" in body
+    body = client.get("/admin/cleanup").get_data(as_text=True)
     # one group per missing must-have field, listing only the incomplete item
     assert "Missing Kind" in body and "Missing Weight" in body
-    cleanup = body.split("Cabinet cleanup")[1].split("Recently updated")[0]
-    assert "Bare" in cleanup and "Complete" not in cleanup
+    assert "Bare" in body and "Complete" not in body
 
 
 def test_todo_clears_when_data_is_filled_in(client):
@@ -134,8 +132,8 @@ def test_todo_clears_when_data_is_filled_in(client):
         "csrf_token": csrf, "name": "Bare", "kind": "Widget", "weight": "3",
         "last_driven": datetime.date.today().isoformat(),
     })
-    body = client.get("/admin/").get_data(as_text=True)
-    assert "To do" not in body  # nothing outstanding -> the section disappears
+    body = client.get("/admin/cleanup").get_data(as_text=True)
+    assert "nothing missing" in body  # nothing outstanding
 
 
 def test_customize_field_checkbox_round_trip(client):
@@ -153,13 +151,13 @@ def test_customize_field_checkbox_round_trip(client):
         "musthave__kind": "on", "musthave__weight": "on", "musthave__notes": "on",
     })
     assert r.status_code == 302
-    assert "Missing Notes" in client.get("/admin/").get_data(as_text=True)
+    assert "Missing Notes" in client.get("/admin/cleanup").get_data(as_text=True)
 
     # uncheck notes again -> notes no longer tracked
     client.post("/admin/customize/fields", data={
         "csrf_token": csrf, "musthave__kind": "on", "musthave__weight": "on",
     })
-    assert "Missing Notes" not in client.get("/admin/").get_data(as_text=True)
+    assert "Missing Notes" not in client.get("/admin/cleanup").get_data(as_text=True)
 
 
 def _add(client, csrf, **extra):
@@ -204,12 +202,10 @@ def test_maintenance_dates_feed_the_todo_list(client):
     _add(client, csrf, last_driven=stale)    # 0002: overdue
     _add(client, csrf)                       # 0003: never driven
 
-    body = client.get("/admin/").get_data(as_text=True)
-    todo = body.split("To do")[1].split("Recently updated")[0]
-    assert "Maintenance" in todo and "Last Driven" in todo
-    assert "100d ago" in todo and "never" in todo
-    assert "0002" in todo and "0003" in todo
-    assert "0001" not in todo  # driven recently, nothing due
+    body = client.get("/admin/todos").get_data(as_text=True)
+    assert "Last Driven" in body
+    assert "overdue" in body and "never done" in body
+    assert "0002" in body and "0003" in body
 
 
 def test_marking_preset_column_private_strips_it_and_stops_the_leak(client):
@@ -245,11 +241,12 @@ def test_marking_searchable_field_private_saves_cleanly(client):
     # the whole save; the form naturally posts both checkboxes
     csrf = _login(client)
     r = client.post("/admin/customize/fields", data={
-        "csrf_token": csrf, "search__notes": "on", "private__notes": "on",
+        "csrf_token": csrf, "tab": "fields",
+        "search__notes": "on", "private__notes": "on",
     }, follow_redirects=True)
     body = r.get_data(as_text=True)
     assert "Field settings saved" in body
-    assert 'name="private__notes" checked' in body
+    assert 'name="private__notes" checked' in body  # saved (didn't bounce)
 
 
 def test_maintenance_done_sets_date_on_selected_items(client):
@@ -301,3 +298,69 @@ def test_cleanup_fill_reports_bad_value_and_skips_it(client):
     }, follow_redirects=True)
     body = r.get_data(as_text=True)
     assert "0001" in body and "Missing Weight" in body  # still outstanding
+
+
+def test_all_todo_views_render(client):
+    import datetime
+    csrf = _login(client)
+    stale = (datetime.date.today() - datetime.timedelta(days=100)).isoformat()
+    _add(client, csrf, last_driven=stale)
+    _add(client, csrf)  # never
+    for view in ("list", "gantt", "calendar", "buckets"):
+        r = client.get(f"/admin/todos?view={view}")
+        assert r.status_code == 200
+        assert "To-Dos" in r.get_data(as_text=True)
+    # list/gantt/buckets show the field; calendar only shows items due in the
+    # visible month (overdue items live in a past month) so it's checked apart
+    for view in ("list", "gantt", "buckets"):
+        assert "Last Driven" in client.get(f"/admin/todos?view={view}").get_data(as_text=True)
+    assert "<svg" in client.get("/admin/todos?view=gantt").get_data(as_text=True)
+    assert "Overdue" in client.get("/admin/todos?view=buckets").get_data(as_text=True)
+    assert "cal-grid" in client.get("/admin/todos?view=calendar").get_data(as_text=True)
+
+
+def test_todos_bad_view_falls_back_to_list(client):
+    _login(client)
+    r = client.get("/admin/todos?view=../../etc")
+    assert r.status_code == 200 and "To-Dos" in r.get_data(as_text=True)
+
+
+def test_overview_shows_counts_and_recent(client):
+    csrf = _login(client)
+    _add(client, csrf)  # missing photo? no, must_have_photos not set here
+    body = client.get("/admin/").get_data(as_text=True)
+    assert "Recently updated" in body
+    assert 'href="/admin/todos"' in body and 'href="/admin/cleanup"' in body
+
+
+def test_customize_tabs_render(client):
+    _login(client)
+    for tab, marker in [("general", "Collection name"), ("fields", "Save fields"),
+                        ("add", "Add field"), ("presets", "specialty table")]:
+        body = client.get(f"/admin/customize?tab={tab}").get_data(as_text=True)
+        assert marker in body, f"{marker} missing on tab {tab}"
+    # unknown tab falls back to general
+    assert "Collection name" in client.get("/admin/customize?tab=xxx").get_data(as_text=True)
+
+
+def test_far_future_date_does_not_brick_todos(client):
+    # a 9999 typo for 1999: stored fine, must not 500 the overview or any view
+    csrf = _login(client)
+    _add(client, csrf, last_driven="9999-12-01")
+    assert client.get("/admin/").status_code == 200
+    for view in ("list", "gantt", "calendar", "buckets"):
+        assert client.get(f"/admin/todos?view={view}").status_code == 200
+
+
+def test_calendar_boundary_months_do_not_500(client):
+    _login(client)
+    for month in ("9999-12", "1-1", "0001-01", "2026-13", "abc", ""):
+        assert client.get(f"/admin/todos?view=calendar&month={month}").status_code == 200
+
+
+def test_view_switch_marks_active_with_seg_class(client):
+    _login(client)
+    body = client.get("/admin/todos?view=gantt").get_data(as_text=True)
+    # the active view uses the real segmented-control class, not a phantom one
+    assert 'class="seg is-active"' in body
+    assert "seg-btn" not in body

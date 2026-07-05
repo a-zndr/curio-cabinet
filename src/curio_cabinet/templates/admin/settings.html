@@ -55,4 +55,12 @@
     email reset by design.
   </p>
 </section>
+
+<section class="form-group">
+  <h2>Session</h2>
+  <form method="post" action="{{ url_for('admin.logout') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="btn" type="submit">Sign out</button>
+  </form>
+</section>
 {% endblock %}

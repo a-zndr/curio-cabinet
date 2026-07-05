@@ -80,9 +80,9 @@ def _login(client):
         follow_redirects=False,
     )
     assert resp.status_code == 302
-    page = client.get("/admin/").get_data(as_text=True)
+    page = client.get("/admin/customize").get_data(as_text=True)
     match = re.search(r'name="csrf_token" value="([^"]+)"', page)
-    assert match, "csrf token not found in dashboard"
+    assert match, "csrf token not found"
     return match.group(1)
 
 
@@ -271,12 +271,15 @@ def test_security_headers_present(client):
 
 def test_admin_nav_on_every_admin_page(client):
     _login(client)
-    for path in ("/admin/", "/admin/customize", "/admin/settings",
-                 "/admin/import", "/admin/items/new"):
+    for path in ("/admin/", "/admin/todos", "/admin/cleanup", "/admin/customize",
+                 "/admin/settings", "/admin/import", "/admin/items/new"):
         body = client.get(path).get_data(as_text=True)
-        for marker in ('href="/admin/customize"', 'href="/admin/settings"',
-                       ">Sign out</button>"):
+        for marker in ('href="/admin/todos"', 'href="/admin/cleanup"',
+                       'href="/admin/customize"', 'href="/admin/settings"'):
             assert marker in body, f"{marker} missing on {path}"
+    # Sign out now lives on the Settings page, not the nav
+    assert ">Sign out</button>" in client.get("/admin/settings").get_data(as_text=True)
+    assert ">Sign out</button>" not in client.get("/admin/").get_data(as_text=True)
 
 
 def test_dashboard_has_no_todo_section_without_must_haves(client):
@@ -296,8 +299,8 @@ def test_must_have_photos_toggle_from_customize(client):
     })
     assert r.status_code == 302
 
-    body = client.get("/admin/").get_data(as_text=True)
-    assert "To do" in body and "Missing Photo" in body
+    body = client.get("/admin/cleanup").get_data(as_text=True)
+    assert "Missing Photo" in body
 
     client.post(
         "/admin/items/0001/images",
@@ -305,5 +308,5 @@ def test_must_have_photos_toggle_from_customize(client):
               "images": (io.BytesIO(_jpeg_bytes()), "shot.jpg")},
         content_type="multipart/form-data",
     )
-    body = client.get("/admin/").get_data(as_text=True)
-    assert "Missing Photo" not in body and "To do" not in body
+    body = client.get("/admin/cleanup").get_data(as_text=True)
+    assert "Missing Photo" not in body and "nothing missing" in body
