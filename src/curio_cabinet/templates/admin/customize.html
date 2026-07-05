@@ -22,6 +22,12 @@
                placeholder="{{ registry.collection.title[:1] }}">
       </div>
       <div class="form-field">
+        <label class="chk" title="Doesn't block saving — photoless items appear on the dashboard's To finish list">
+          <input type="checkbox" name="must_have_photos" {{ 'checked' if registry.collection.must_have_photos }}>
+          Photos are a must-have
+        </label>
+      </div>
+      <div class="form-field">
         <label for="cz-titlefield">Headline field</label>
         <select id="cz-titlefield" name="title_field">
           {% for f in registry.fields %}
@@ -105,6 +111,7 @@
             {% if f.type.value in ('enum', 'tags', 'boolean', 'number', 'integer') %}
               <label class="chk"><input type="checkbox" name="pivot__{{ k }}" {{ 'checked' if f.pivot_ops }}> Analytics</label>
             {% endif %}
+            <label class="chk" title="Doesn't block saving — items missing this appear on the dashboard's To finish list"><input type="checkbox" name="musthave__{{ k }}" {{ 'checked' if f.must_have }}> Must-have</label>
           </div>
           {% if f.type.value == 'enum' %}
             <label class="cfg-values">Options <input name="values__{{ k }}" value="{{ f.values|join(', ') }}" placeholder="comma, separated"></label>

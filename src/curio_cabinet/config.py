@@ -243,6 +243,8 @@ class FieldSpec:
     label: str
     type: FieldType
     required: bool = False
+    must_have: bool = False            # soft-required: tracked on the admin
+                                       # to-finish list, never blocks a save
     default: Any = None
     searchable: bool = False
     suggest: bool = False              # text fields: admin form offers existing values
@@ -258,8 +260,9 @@ class FieldSpec:
         raw = _mapping(raw, "field")
         _reject_unknown(
             raw,
-            {"key", "label", "type", "required", "default", "searchable", "suggest",
-             "unit", "link", "values", "strict", "rename_from", "views"},
+            {"key", "label", "type", "required", "must_have", "default",
+             "searchable", "suggest", "unit", "link", "values", "strict",
+             "rename_from", "views"},
             "field",
         )
         key = _str(raw, "key", "field")
@@ -285,6 +288,7 @@ class FieldSpec:
             label=_str(raw, "label", ctx),
             type=ftype,
             required=_bool(raw, "required", ctx),
+            must_have=_bool(raw, "must_have", ctx),
             default=raw.get("default"),
             searchable=_bool(raw, "searchable", ctx),
             suggest=_bool(raw, "suggest", ctx),
@@ -472,6 +476,7 @@ class CollectionMeta:
     accent_hue: int | None = None
     accent: str | None = None  # full hex color; takes precedence over accent_hue
     monogram: str | None = None  # favicon letter(s); defaults to title initial
+    must_have_photos: bool = False  # photoless items appear on the to-finish list
 
     @classmethod
     def from_raw(cls, raw: Any) -> "CollectionMeta":
@@ -479,7 +484,7 @@ class CollectionMeta:
         _reject_unknown(
             raw,
             {"title", "slug", "id", "title_field", "default_sort",
-             "accent_hue", "accent", "monogram"},
+             "accent_hue", "accent", "monogram", "must_have_photos"},
             "collection",
         )
         slug = _str(raw, "slug", "collection")
@@ -514,6 +519,7 @@ class CollectionMeta:
             accent_hue=hue,
             accent=accent,
             monogram=monogram,
+            must_have_photos=_bool(raw, "must_have_photos", "collection"),
         )
 
 

@@ -211,6 +211,41 @@ def logout():
 # Dashboard -------------------------------------------------------------------
 
 
+def _missing_must_haves(row, photo_ids: set) -> list[str]:
+    """Labels of configured must-have data this item still lacks.
+    Must-haves never block a save — they only feed the to-finish list."""
+    missing = []
+    for f in g.registry.fields:
+        if not f.must_have:
+            continue
+        v = row[f.key]
+        if v is None or (isinstance(v, str) and v.strip() in ("", "[]")):
+            missing.append(f.label)
+    if g.registry.collection.must_have_photos and row["id"] not in photo_ids:
+        missing.append("Photo")
+    return missing
+
+
+def _incomplete_items() -> list[dict] | None:
+    """Items missing must-have data, or None when none are configured."""
+    reg = g.registry
+    if not (any(f.must_have for f in reg.fields) or reg.collection.must_have_photos):
+        return None
+    photo_ids = {
+        r["item_id"] for r in g.db.execute('SELECT DISTINCT "item_id" FROM images')
+    }
+    out = []
+    for row in g.db.execute(f'SELECT * FROM "{reg.table}" ORDER BY "id"'):
+        missing = _missing_must_haves(row, photo_ids)
+        if missing:
+            out.append({
+                "id": row["id"],
+                "title": row[reg.collection.title_field],
+                "missing": missing,
+            })
+    return out
+
+
 @bp.get("/")
 def dashboard():
     table = g.registry.table
@@ -218,7 +253,12 @@ def dashboard():
     recent = g.db.execute(
         f'SELECT * FROM "{table}" ORDER BY "updated_at" DESC LIMIT 8'
     ).fetchall()
-    return render_template("admin/dashboard.html", count=count, recent=recent)
+    return render_template(
+        "admin/dashboard.html",
+        count=count,
+        recent=recent,
+        incomplete=_incomplete_items(),
+    )
 
 
 # Item CRUD --------------------------------------------------------------------
@@ -617,6 +657,10 @@ def customize_general():
         c["monogram"] = mono[:2]
     else:
         c.pop("monogram", None)  # cleared → fall back to the title initial
+    if request.form.get("must_have_photos"):
+        c["must_have_photos"] = True
+    else:
+        c.pop("must_have_photos", None)
     color = request.form.get("accent", "").strip()
     if color:
         from ..colors import normalize_hex
@@ -669,6 +713,10 @@ def _update_field_views(f: dict, key: str) -> None:
     else:
         views.pop("pivot", None)
     f["views"] = views
+    if f"musthave__{key}" in request.form:
+        f["must_have"] = True
+    else:
+        f.pop("must_have", None)
     if ftype in ("text", "longtext", "tags"):
         f["searchable"] = f"search__{key}" in request.form
     if ftype == "text":

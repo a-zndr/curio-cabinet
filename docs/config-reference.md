@@ -22,6 +22,8 @@ collection:
   accent_hue: 45             # optional: OKLCH hue for the UI accent (0-360)
   monogram: z                # optional: favicon letter(s), 1-2 chars;
                              # defaults to the title's first letter
+  must_have_photos: false    # photoless items appear on the admin
+                             # dashboard's "To finish" list
 
 fields:  [ ... ]             # see below
 groups:  [ ... ]             # detail-page + admin-form sections
@@ -37,6 +39,10 @@ Each entry under `fields:`:
   label: Length            # human label (also a CSV header)
   type: number             # see types below
   required: false          # empty value rejected on write if true
+  must_have: false         # soft-required: never blocks a save, but items
+                           # missing it show on the admin dashboard's
+                           # "To finish" list (see also
+                           # collection.must_have_photos for photos)
   default: null            # value used when input is empty (must be valid)
   searchable: false        # text/longtext/tags: included in the ?q= search
   link: some_url_field     # text fields: render as a link to this url field

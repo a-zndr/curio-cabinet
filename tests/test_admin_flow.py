@@ -277,3 +277,33 @@ def test_admin_nav_on_every_admin_page(client):
         for marker in ('href="/admin/customize"', 'href="/admin/settings"',
                        ">Sign out</button>"):
             assert marker in body, f"{marker} missing on {path}"
+
+
+def test_dashboard_has_no_todo_section_without_must_haves(client):
+    _login(client)
+    assert "To finish" not in client.get("/admin/").get_data(as_text=True)
+
+
+def test_must_have_photos_toggle_from_customize(client):
+    # full loop: enable the toggle, see the item on the list, add a photo,
+    # watch it clear — all live, no restart
+    csrf = _login(client)
+    client.post("/admin/items/new", data={"csrf_token": csrf, "name": "Unshot"})
+    r = client.post("/admin/customize/general", data={
+        "csrf_token": csrf, "title_field": "name",
+        "sort_field": "name", "sort_order": "asc",
+        "must_have_photos": "on",
+    })
+    assert r.status_code == 302
+
+    body = client.get("/admin/").get_data(as_text=True)
+    assert "To finish" in body and ">Photo</span>" in body
+
+    client.post(
+        "/admin/items/0001/images",
+        data={"csrf_token": csrf,
+              "images": (io.BytesIO(_jpeg_bytes()), "shot.jpg")},
+        content_type="multipart/form-data",
+    )
+    body = client.get("/admin/").get_data(as_text=True)
+    assert "todo-chip" not in body and "nothing missing" in body

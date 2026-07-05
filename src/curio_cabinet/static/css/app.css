@@ -311,6 +311,34 @@ input[type="file"] { border: none; padding: 0; background: none; }
 }
 .admin-recent a:hover { background: var(--accent-soft); text-decoration: none; }
 
+/* dashboard "To finish" list: item link + chips for what's missing */
+.admin-todo li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.admin-todo a { flex: 1; min-width: 200px; }
+.todo-count {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--accent-contrast);
+  background: var(--accent);
+  border-radius: 999px;
+  padding: 1px 8px;
+  vertical-align: 2px;
+}
+.todo-missing { display: flex; gap: var(--space-1); flex-wrap: wrap; }
+.todo-chip {
+  font-size: var(--text-sm);
+  color: var(--danger);
+  border: 1px solid color-mix(in oklab, var(--danger) 40%, transparent);
+  border-radius: 999px;
+  padding: 0 8px;
+  white-space: nowrap;
+}
+
 .admin-gallery {
   list-style: none;
   display: flex;
