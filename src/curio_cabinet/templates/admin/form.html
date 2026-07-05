@@ -1,9 +1,6 @@
-{% extends "base.html" %}
+{% extends "admin/_base.html" %}
 {% from "_fields.html" import field_input %}
 {% block title %}{{ 'Edit ' + item['id'] if item else 'New item' }} · {{ registry.collection.title }}{% endblock %}
-{% block nav %}
-  <a href="{{ url_for('admin.dashboard') }}">Admin</a>
-{% endblock %}
 {% block content %}
 <div class="page-head">
   <h1>{{ 'Edit ' ~ item['id'] if item else 'New item' }}</h1>

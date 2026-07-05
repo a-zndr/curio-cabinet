@@ -267,3 +267,13 @@ def test_security_headers_present(client):
     assert "default-src 'self'" in resp.headers["Content-Security-Policy"]
     assert resp.headers["X-Content-Type-Options"] == "nosniff"
     assert resp.headers["Referrer-Policy"] == "same-origin"
+
+
+def test_admin_nav_on_every_admin_page(client):
+    _login(client)
+    for path in ("/admin/", "/admin/customize", "/admin/settings",
+                 "/admin/import", "/admin/items/new"):
+        body = client.get(path).get_data(as_text=True)
+        for marker in ('href="/admin/customize"', 'href="/admin/settings"',
+                       ">Sign out</button>"):
+            assert marker in body, f"{marker} missing on {path}"

@@ -1,0 +1,12 @@
+{# Shared shell for authed admin pages: every one gets the full admin nav.
+   base.html additionally appends the "Admin" (dashboard) link for logged-in
+   users, so the header reads: Customize · Settings · Sign out · ☼ · Admin #}
+{% extends "base.html" %}
+{% block nav %}
+  <a href="{{ url_for('admin.customize') }}">Customize</a>
+  <a href="{{ url_for('admin.settings') }}">Settings</a>
+  <form method="post" action="{{ url_for('admin.logout') }}" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit" class="link-btn">Sign out</button>
+  </form>
+{% endblock %}
