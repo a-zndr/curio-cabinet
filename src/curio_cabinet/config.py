@@ -470,13 +470,14 @@ class CollectionMeta:
     default_sort: SortSpec
     id: IdSpec = dc_field(default_factory=IdSpec)
     accent_hue: int | None = None
+    accent: str | None = None  # full hex color; takes precedence over accent_hue
 
     @classmethod
     def from_raw(cls, raw: Any) -> "CollectionMeta":
         raw = _mapping(raw, "collection")
         _reject_unknown(
             raw,
-            {"title", "slug", "id", "title_field", "default_sort", "accent_hue"},
+            {"title", "slug", "id", "title_field", "default_sort", "accent_hue", "accent"},
             "collection",
         )
         slug = _str(raw, "slug", "collection")
@@ -487,6 +488,14 @@ class CollectionMeta:
         hue = raw.get("accent_hue")
         if hue is not None and (not isinstance(hue, int) or isinstance(hue, bool)):
             raise ValueError("collection.accent_hue must be an integer")
+        accent = raw.get("accent")
+        if accent is not None:
+            from .colors import normalize_hex
+
+            norm = normalize_hex(str(accent))
+            if norm is None:
+                raise ValueError("collection.accent must be a hex color like #7c5cff")
+            accent = norm
         if "default_sort" not in raw:
             raise ValueError("collection: 'default_sort' is required")
         return cls(
@@ -496,6 +505,7 @@ class CollectionMeta:
             default_sort=SortSpec.from_raw(raw["default_sort"]),
             id=IdSpec.from_raw(raw.get("id")),
             accent_hue=hue,
+            accent=accent,
         )
 
 

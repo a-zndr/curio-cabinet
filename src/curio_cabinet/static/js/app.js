@@ -429,28 +429,57 @@
   }
   document.addEventListener("DOMContentLoaded", initAutofill);
 
-  // Customize page: live accent-hue preview (sets the CSS var app-wide as you
-  // drag, so the whole page previews the color) + preset swatches.
-  function bindHue() {
-    var input = document.querySelector("[data-hue-input]");
-    if (!input) return;
-    var apply = function () {
-      document.documentElement.style.setProperty("--accent-hue", input.value);
+  // Customize page: accent color picker. The native <input type=color> and a
+  // hex field stay in sync, preset swatches set both, and the whole page
+  // previews live (sets --accent-override app-wide; --accent-soft derives from
+  // it in CSS, and we compute a readable --accent-contrast-override).
+  function bindColor() {
+    var picker = document.querySelector("[data-color-input]");
+    var hex = document.querySelector("[data-color-hex]");
+    if (!picker) return;
+
+    var HEX = /^#[0-9a-fA-F]{6}$/;
+    var contrast = function (h) {
+      var r = parseInt(h.slice(1, 3), 16) / 255,
+        g = parseInt(h.slice(3, 5), 16) / 255,
+        b = parseInt(h.slice(5, 7), 16) / 255;
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.6 ? "#1c1917" : "#ffffff";
     };
-    if (!input.dataset.bound) {
-      input.dataset.bound = "1";
-      input.addEventListener("input", apply);
+    var preview = function (h) {
+      var root = document.documentElement.style;
+      root.setProperty("--accent-override", h);
+      root.setProperty("--accent-contrast-override", contrast(h));
+    };
+    var setAll = function (h, from) {
+      h = h.toLowerCase();
+      if (from !== "picker") picker.value = h;
+      if (from !== "hex" && hex) hex.value = h;
+      preview(h);
+    };
+
+    if (!picker.dataset.bound) {
+      picker.dataset.bound = "1";
+      picker.addEventListener("input", function () {
+        setAll(picker.value, "picker");
+      });
     }
-    apply();
-    document.querySelectorAll("[data-hue-preset]").forEach(function (btn) {
-      btn.style.background = "oklch(0.6 0.13 " + btn.dataset.huePreset + ")";
+    if (hex && !hex.dataset.bound) {
+      hex.dataset.bound = "1";
+      hex.addEventListener("input", function () {
+        var v = hex.value.trim();
+        if (v && v[0] !== "#") v = "#" + v;
+        if (HEX.test(v)) setAll(v, "hex");
+      });
+    }
+    document.querySelectorAll("[data-color-preset]").forEach(function (btn) {
+      btn.style.background = btn.dataset.colorPreset;
       if (btn.dataset.bound) return;
       btn.dataset.bound = "1";
       btn.addEventListener("click", function () {
-        input.value = btn.dataset.huePreset;
-        apply();
+        setAll(btn.dataset.colorPreset, "");
       });
     });
+    preview(picker.value); // reflect current on load
   }
-  document.addEventListener("DOMContentLoaded", bindHue);
+  document.addEventListener("DOMContentLoaded", bindColor);
 })();

@@ -853,16 +853,15 @@ body.panel-open { overflow: hidden; }
 .share-dialog input[type="text"] { margin: var(--space-1) 0 0; }
 
 /* Customize (live config editor) -------------------------------------------- */
-.hue-row { display: flex; align-items: center; gap: var(--space-3); }
-.hue-swatch {
-  width: 34px; height: 34px; flex: none;
-  border-radius: 50%;
-  border: 1px solid var(--border-strong);
-  background: oklch(0.6 0.13 var(--accent-hue));
+.color-row { display: flex; align-items: center; gap: var(--space-2); }
+.color-row input[type="color"] {
+  width: 44px; height: 38px; flex: none; padding: 2px;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  background: var(--surface); cursor: pointer;
 }
-.hue-row input[type="range"] { flex: 1; }
-.hue-presets { display: flex; gap: var(--space-2); margin-top: var(--space-2); }
-.hue-chip { width: 22px; height: 22px; padding: 0; border-radius: 50%; border: 1px solid var(--border-strong); cursor: pointer; }
+.color-hex { max-width: 130px; text-transform: lowercase; }
+.color-presets { display: flex; gap: var(--space-2); margin-top: var(--space-2); }
+.color-chip { width: 24px; height: 24px; padding: 0; border-radius: 50%; border: 1px solid var(--border-strong); cursor: pointer; }
 
 .cfg-fields { display: flex; flex-direction: column; gap: var(--space-3); }
 .cfg-field { border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-3); background: var(--surface); }

@@ -233,11 +233,13 @@ def test_customize_general_live(app, client):
     r = client.post("/admin/customize/general", data={
         "csrf_token": csrf, "title": "My Cabinet",
         "title_field": "name", "sort_field": "name", "sort_order": "asc",
-        "accent_hue": "210",
+        "accent": "#3b6fd4",
     })
     assert r.status_code == 302
     # change is live immediately (config hot-swapped, no restart)
     assert "My Cabinet" in client.get("/").get_data(as_text=True)
+    css = client.get("/theme.css").get_data(as_text=True)
+    assert "--accent-override: #3b6fd4" in css  # picked color applied
 
 
 def test_customize_add_field_live(app, client):

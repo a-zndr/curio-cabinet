@@ -391,9 +391,21 @@ def _list_og(rows, title: str) -> dict:
 @bp.get("/theme.css")
 def theme_css():
     """Config-driven theme overrides, served as CSS so the strict CSP
-    (no inline styles) holds."""
-    hue = g.registry.collection.accent_hue
-    body = f":root {{ --accent-hue: {int(hue)}; }}\n" if hue is not None else ""
+    (no inline styles) holds. A full hex `accent` wins over `accent_hue`."""
+    from ..colors import contrast_hex
+
+    coll = g.registry.collection
+    if coll.accent:
+        body = (
+            ":root { "
+            f"--accent-override: {coll.accent}; "
+            f"--accent-contrast-override: {contrast_hex(coll.accent)}; "
+            "}\n"
+        )
+    elif coll.accent_hue is not None:
+        body = f":root {{ --accent-hue: {int(coll.accent_hue)}; }}\n"
+    else:
+        body = ""
     return body, 200, {
         "Content-Type": "text/css",
         "Cache-Control": "public, max-age=3600",

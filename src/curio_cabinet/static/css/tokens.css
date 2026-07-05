@@ -57,9 +57,12 @@
   --text: oklch(0.24 0.008 60);
   --text-muted: oklch(0.5 0.01 60);
   --text-faint: oklch(0.65 0.008 60);
-  --accent: oklch(0.55 0.125 var(--accent-hue));
-  --accent-soft: oklch(0.55 0.125 var(--accent-hue) / 0.09);
-  --accent-contrast: oklch(0.99 0 0);
+  /* --accent-override (a hex color) wins when set (Customize); otherwise the
+     accent is derived from --accent-hue. --accent-soft always derives from
+     whatever --accent resolves to, so a custom color themes everything. */
+  --accent: var(--accent-override, oklch(0.55 0.125 var(--accent-hue)));
+  --accent-soft: color-mix(in oklab, var(--accent) 11%, transparent);
+  --accent-contrast: var(--accent-contrast-override, oklch(0.99 0 0));
   --danger: oklch(0.55 0.19 25);
   --focus: oklch(0.55 0.16 250);
   --shadow-1: 0 1px 2px oklch(0 0 0 / 0.06);
@@ -77,9 +80,9 @@
   --text: oklch(0.92 0.005 80);
   --text-muted: oklch(0.71 0.008 80);
   --text-faint: oklch(0.55 0.008 80);
-  --accent: oklch(0.72 0.115 calc(var(--accent-hue) + 10));
-  --accent-soft: oklch(0.72 0.115 calc(var(--accent-hue) + 10) / 0.14);
-  --accent-contrast: oklch(0.18 0.01 60);
+  --accent: var(--accent-override, oklch(0.72 0.115 calc(var(--accent-hue) + 10)));
+  --accent-soft: color-mix(in oklab, var(--accent) 16%, transparent);
+  --accent-contrast: var(--accent-contrast-override, oklch(0.18 0.01 60));
   --danger: oklch(0.68 0.17 25);
   --focus: oklch(0.7 0.14 250);
   --shadow-1: none;
@@ -98,9 +101,9 @@
     --text: oklch(0.92 0.005 80);
     --text-muted: oklch(0.71 0.008 80);
     --text-faint: oklch(0.55 0.008 80);
-    --accent: oklch(0.72 0.115 calc(var(--accent-hue) + 10));
-    --accent-soft: oklch(0.72 0.115 calc(var(--accent-hue) + 10) / 0.14);
-    --accent-contrast: oklch(0.18 0.01 60);
+    --accent: var(--accent-override, oklch(0.72 0.115 calc(var(--accent-hue) + 10)));
+    --accent-soft: color-mix(in oklab, var(--accent) 16%, transparent);
+    --accent-contrast: var(--accent-contrast-override, oklch(0.18 0.01 60));
     --danger: oklch(0.68 0.17 25);
     --focus: oklch(0.7 0.14 250);
     --shadow-1: none;

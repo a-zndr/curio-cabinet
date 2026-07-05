@@ -39,16 +39,15 @@
         </div>
       </div>
       <div class="form-field">
-        <label for="cz-hue">Accent color</label>
-        <div class="hue-row">
-          <span class="hue-swatch" data-hue-swatch></span>
-          <input id="cz-hue" type="range" min="0" max="360" step="1"
-                 name="accent_hue" value="{{ registry.collection.accent_hue if registry.collection.accent_hue is not none else 45 }}"
-                 data-hue-input>
+        <label for="cz-accent">Accent color</label>
+        <div class="color-row">
+          <input id="cz-accent" type="color" name="accent" value="{{ accent_seed }}" data-color-input aria-label="Accent color">
+          <input type="text" class="color-hex mono" value="{{ accent_seed }}" data-color-hex
+                 maxlength="7" spellcheck="false" autocapitalize="off" aria-label="Accent hex code">
         </div>
-        <div class="hue-presets">
-          {% for h in [45, 15, 145, 250, 300, 200] %}
-            <button type="button" class="hue-chip" data-hue-preset="{{ h }}" aria-label="hue {{ h }}"></button>
+        <div class="color-presets">
+          {% for c in ['#a4632f', '#c0392b', '#2e7d54', '#3b6fd4', '#7c5cff', '#178a8a'] %}
+            <button type="button" class="color-chip" data-color-preset="{{ c }}" aria-label="Use {{ c }}"></button>
           {% endfor %}
         </div>
       </div>

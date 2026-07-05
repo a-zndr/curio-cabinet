@@ -513,9 +513,14 @@ def _raw():
 
 @bp.get("/customize")
 def customize():
-    from .. import configio
+    from ..colors import oklch_to_hex
 
-    return render_template("admin/customize.html", raw=configio.load_raw(g.inst))
+    coll = g.registry.collection
+    if coll.accent:
+        seed = coll.accent
+    else:
+        seed = oklch_to_hex(0.55, 0.125, coll.accent_hue if coll.accent_hue is not None else 45)
+    return render_template("admin/customize.html", accent_seed=seed)
 
 
 @bp.post("/customize/general")
@@ -525,14 +530,16 @@ def customize_general():
     title = request.form.get("title", "").strip()
     if title:
         c["title"] = title
-    hue = request.form.get("accent_hue", "").strip()
-    if hue == "":
-        c.pop("accent_hue", None)
+    color = request.form.get("accent", "").strip()
+    if color:
+        from ..colors import normalize_hex
+
+        norm = normalize_hex(color)
+        if norm:
+            c["accent"] = norm
+            c.pop("accent_hue", None)  # a chosen color supersedes the legacy hue
     else:
-        try:
-            c["accent_hue"] = int(float(hue))
-        except ValueError:
-            pass
+        c.pop("accent", None)  # cleared → fall back to hue / default
     tf = request.form.get("title_field")
     if tf:
         c["title_field"] = tf

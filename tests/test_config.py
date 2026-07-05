@@ -125,6 +125,17 @@ def test_example_config_has_presets():
     assert {"whips", "floggers"} <= keys
 
 
+def test_accent_hex_validated_and_normalized():
+    raw = _raw()
+    raw["collection"]["accent"] = "#3B6FD4"
+    assert make_config(raw).collection.accent == "#3b6fd4"
+    raw["collection"]["accent"] = "f0a"  # shorthand, no hash
+    assert make_config(raw).collection.accent == "#ff00aa"
+    raw["collection"]["accent"] = "not-a-color"
+    with pytest.raises(Exception, match="hex color"):
+        make_config(raw)
+
+
 def test_config_sha_stable_and_schema_sensitive():
     a, b = make_config(), make_config()
     assert a.sha() == b.sha()
