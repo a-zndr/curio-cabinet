@@ -43,6 +43,14 @@ fields:
     label: Last Driven
     type: date
     every_days: 60
+  - key: conditioning_every
+    label: Conditioning every
+    type: integer
+    unit: {label: days}
+  - key: last_conditioned
+    label: Last Conditioned
+    type: date
+    every_days_field: conditioning_every
 
 presets:
   - key: widgets
@@ -53,7 +61,8 @@ presets:
 groups:
   - key: core
     label: Core
-    fields: [name, kind, weight, notes, secret_notes, last_driven]
+    fields: [name, kind, weight, notes, secret_notes, last_driven,
+             conditioning_every, last_conditioned]
 """
 
 PW = "a sufficiently long password"
@@ -403,3 +412,106 @@ def test_customize_saves_maintenance_condition(client, app):
     raw = configio.load_raw(app.config["CABINET_INSTANCE"])
     ld = next(f for f in raw["fields"] if f["key"] == "last_driven")
     assert ld.get("every_days") == 90 and ld.get("every_days_when", {}).get("field") == "kind"
+
+
+def test_manage_bulk_opt_in_and_per_item_intervals(client):
+    csrf = _login(client)
+    driven = __import__("datetime").date.today().isoformat()
+    for n in ("W1", "W2", "F1"):
+        _add(client, csrf, name=n, last_driven=driven)
+
+    # bulk: opt W1+W2 in at 90 days
+    r = client.post("/admin/maintenance/last_conditioned/schedule", data={
+        "csrf_token": csrf, "action": "bulk", "bulk_days": "90",
+        "sel": ["0001", "0002"],
+    }, follow_redirects=True)
+    assert "Schedule updated on 2 item(s)" in r.get_data(as_text=True)
+
+    body = client.get("/admin/todos").get_data(as_text=True)
+    cond = body.split("Last Conditioned")[1]
+    assert "W1" in cond and "W2" in cond and "F1" not in cond
+    assert "every 90d" in cond and "never done" in cond
+
+    # individual save: W1 -> 30 days, W2 -> opted out (blank)
+    r = client.post("/admin/maintenance/last_conditioned/schedule", data={
+        "csrf_token": csrf, "action": "save",
+        "ev__0001": "30", "ev__0002": "",
+    }, follow_redirects=True)
+    body = client.get("/admin/todos").get_data(as_text=True)
+    cond = body.split("Last Conditioned")[1]
+    assert "every 30d" in cond and "W2" not in cond
+
+    # clear: opt W1 back out -> empty schedule with a manage hint
+    client.post("/admin/maintenance/last_conditioned/schedule", data={
+        "csrf_token": csrf, "action": "clear", "sel": ["0001"],
+    })
+    body = client.get("/admin/todos").get_data(as_text=True)
+    assert "No items opted in yet" in body.split("Last Conditioned")[1]
+
+
+def test_manage_page_404_for_fixed_cadence_field(client):
+    _login(client)
+    assert client.get("/admin/maintenance/last_driven").status_code == 404
+    assert client.get("/admin/maintenance/nope").status_code == 404
+
+
+def test_mark_done_on_per_item_schedule(client):
+    import datetime
+    csrf = _login(client)
+    _add(client, csrf, last_driven=datetime.date.today().isoformat())
+    client.post("/admin/maintenance/last_conditioned/schedule", data={
+        "csrf_token": csrf, "action": "bulk", "bulk_days": "90", "sel": ["0001"],
+    })
+    r = client.post("/admin/maintenance/done", data={
+        "csrf_token": csrf, "field": "last_conditioned",
+        "done_date": datetime.date.today().isoformat(), "item_ids": ["0001"],
+    }, follow_redirects=True)
+    assert "Marked Last Conditioned done" in r.get_data(as_text=True)
+    body = client.get("/admin/todos").get_data(as_text=True)
+    assert "never done" not in body.split("Last Conditioned")[1]
+
+
+def test_add_maintenance_flag_via_customize(client, app):
+    csrf = _login(client)
+    r = client.post("/admin/customize/maintenance/add", data={
+        "csrf_token": csrf, "tab": "add", "label": "Waxing",
+    }, follow_redirects=True)
+    assert "Added maintenance flag" in r.get_data(as_text=True)
+    reg = app.config["CABINET_INSTANCE"].registry
+    lw = reg.by_key["last_waxing"]
+    assert lw.every_days_field == "waxing_every"
+    assert reg.by_key["waxing_every"].type.value == "integer"
+    # both fields show up on the item form right away
+    form = client.get("/admin/items/new").get_data(as_text=True)
+    assert 'name="waxing_every"' in form and 'name="last_waxing"' in form
+    # and the flag has a manage page
+    assert client.get("/admin/maintenance/last_waxing").status_code == 200
+
+
+def test_invalid_intervals_rejected_without_data_loss(client):
+    csrf = _login(client)
+    _add(client, csrf)
+    # a 30-digit interval must not 500 (sqlite ints are 64-bit)
+    r = client.post("/admin/maintenance/last_conditioned/schedule", data={
+        "csrf_token": csrf, "action": "bulk",
+        "bulk_days": "9" * 30, "sel": ["0001"],
+    }, follow_redirects=True)
+    assert r.status_code == 200
+    assert "1–36500" in r.get_data(as_text=True)
+
+    # opt in at 90, then save an out-of-range typo: the 90 must SURVIVE
+    client.post("/admin/maintenance/last_conditioned/schedule", data={
+        "csrf_token": csrf, "action": "bulk", "bulk_days": "90", "sel": ["0001"],
+    })
+    r = client.post("/admin/maintenance/last_conditioned/schedule", data={
+        "csrf_token": csrf, "action": "save", "ev__0001": "40000",
+    }, follow_redirects=True)
+    body = r.get_data(as_text=True)
+    assert "Kept the old interval" in body
+    assert 'value="90"' in body  # still scheduled at 90
+
+    # blank IS a deliberate opt-out
+    client.post("/admin/maintenance/last_conditioned/schedule", data={
+        "csrf_token": csrf, "action": "save", "ev__0001": "",
+    })
+    assert "No items opted in yet" in client.get("/admin/todos").get_data(as_text=True).split("Last Conditioned")[1]

@@ -1,0 +1,46 @@
+{% extends "admin/_base.html" %}
+{% block title %}{{ field.label }} schedule · {{ registry.collection.title }}{% endblock %}
+{% block main_class %}page{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>{{ field.label }} — schedule</h1>
+  <a class="btn" href="{{ url_for('admin.todos') }}">← To-Dos</a>
+</div>
+<p class="hint">
+  Give an item a number of days to opt it into this schedule; clear it to opt
+  out. Use the checkboxes to set a batch at once — intervals can differ per
+  item (90 days for some, 30 for others).
+</p>
+
+<form method="post" action="{{ url_for('admin.maintenance_schedule_save', field_key=field.key) }}" class="todo-group">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="todo-group-head">
+    <h3>{{ items|length }} item{{ '' if items|length == 1 else 's' }}</h3>
+    <div class="todo-done-controls">
+      <label class="chk">Set checked to
+        <input type="number" name="bulk_days" min="1" max="36500" class="cfg-days" placeholder="90"> days</label>
+      <button class="btn btn-sm btn-primary" type="submit" name="action" value="bulk">Apply</button>
+      <button class="btn btn-sm" type="submit" name="action" value="clear">Opt checked out</button>
+    </div>
+  </div>
+  <ul class="todo-list">
+    {% for item in items %}
+    <li class="todo-fill-row">
+      <label class="chk">
+        <input type="checkbox" name="sel" value="{{ item.id }}">
+        <span class="mono muted">{{ item.id }}</span> {{ item.title }}
+      </label>
+      <span class="maint-cell">
+        {% if item.last %}<span class="hint-inline">last {{ item.last }}</span>{% endif %}
+        <label class="chk">every
+          <input type="number" name="ev__{{ item.id }}" min="1" max="36500" class="cfg-days"
+                 value="{{ item.every or '' }}" placeholder="–"> days</label>
+      </span>
+    </li>
+    {% endfor %}
+  </ul>
+  <div class="form-actions">
+    <button class="btn btn-primary" type="submit" name="action" value="save">Save all intervals</button>
+  </div>
+</form>
+{% endblock %}

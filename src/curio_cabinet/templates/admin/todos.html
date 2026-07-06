@@ -33,23 +33,39 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="field" value="{{ grp.field.key }}">
     <div class="todo-group-head">
-      <h3>{{ grp.field.label }} <span class="hint-inline">every {{ grp.field.every_days }} days</span></h3>
+      <h3>{{ grp.field.label }}
+        {% if grp.per_item %}
+          <span class="hint-inline">per-item intervals</span>
+          · <a href="{{ url_for('admin.maintenance_manage', field_key=grp.field.key) }}">Manage schedule</a>
+        {% else %}
+          <span class="hint-inline">every {{ grp.field.every_days }} days</span>
+        {% endif %}
+      </h3>
+      {% if grp.entries %}
       <div class="todo-done-controls">
         <input type="date" name="done_date" value="{{ today }}" aria-label="Done on">
         <button class="btn btn-sm btn-primary" type="submit">Mark done</button>
       </div>
+      {% endif %}
     </div>
+    {% if grp.entries %}
     <ul class="todo-list">
       {% for e in grp.entries %}
       <li>
         <label class="chk">
           <input type="checkbox" name="item_ids" value="{{ e.id }}">
           <span class="mono muted">{{ e.id }}</span> {{ e.title }}
+          {% if grp.per_item %}<span class="hint-inline">every {{ e.every }}d</span>{% endif %}
         </label>
         {{ status_chip(e) }}
       </li>
       {% endfor %}
     </ul>
+    {% elif grp.per_item %}
+    <p class="muted">No items opted in yet —
+      <a href="{{ url_for('admin.maintenance_manage', field_key=grp.field.key) }}">manage the schedule</a>
+      to add some.</p>
+    {% endif %}
   </form>
   {% endfor %}
 

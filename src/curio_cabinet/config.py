@@ -250,6 +250,9 @@ class FieldSpec:
                                        # blank/stale date lands on the to-finish list
     every_days_when: "WhenSpec | None" = None  # scope the cadence to matching
                                        # items only (e.g. type in [Whip])
+    every_days_field: str | None = None  # per-item cadence: read the interval
+                                       # from this integer field on each item;
+                                       # blank there = item not on the schedule
     computed: str | None = None        # number/integer: arithmetic over other
                                        # fields, e.g. "weight / (length / 100)"
     default: Any = None
@@ -268,8 +271,9 @@ class FieldSpec:
         _reject_unknown(
             raw,
             {"key", "label", "type", "required", "must_have", "private",
-             "every_days", "every_days_when", "computed", "default", "searchable",
-             "suggest", "unit", "link", "values", "strict", "rename_from", "views"},
+             "every_days", "every_days_when", "every_days_field", "computed",
+             "default", "searchable", "suggest", "unit", "link", "values",
+             "strict", "rename_from", "views"},
             "field",
         )
         key = _str(raw, "key", "field")
@@ -301,6 +305,7 @@ class FieldSpec:
             every_days_when=(WhenSpec.from_raw(raw["every_days_when"],
                                                f"{ctx}.every_days_when")
                              if raw.get("every_days_when") is not None else None),
+            every_days_field=_str(raw, "every_days_field", ctx, required=False),
             computed=_str(raw, "computed", ctx, required=False),
             default=raw.get("default"),
             searchable=_bool(raw, "searchable", ctx),
@@ -331,8 +336,19 @@ class FieldSpec:
             if not isinstance(spec.every_days, int) or isinstance(spec.every_days, bool) \
                     or spec.every_days < 1:
                 raise ValueError(f"{ctx}: every_days must be a positive integer")
-        if spec.every_days_when is not None and spec.every_days is None:
-            raise ValueError(f"{ctx}: every_days_when needs every_days set")
+        if spec.every_days_field is not None:
+            if spec.type is not FieldType.date:
+                raise ValueError(f"{ctx}: every_days_field only applies to date fields")
+            if spec.every_days is not None:
+                raise ValueError(
+                    f"{ctx}: use every_days (fixed) OR every_days_field "
+                    "(per-item), not both"
+                )
+        if spec.every_days_when is not None and spec.every_days is None \
+                and spec.every_days_field is None:
+            raise ValueError(
+                f"{ctx}: every_days_when needs every_days or every_days_field"
+            )
         if spec.computed is not None:
             from .compute import ComputeError, validate_expr
             if spec.type not in (FieldType.number, FieldType.integer):
@@ -657,6 +673,25 @@ def _validate(
                 f"field {f.key!r}: every_days_when references unknown field "
                 f"{f.every_days_when.field!r}"
             )
+        if f.every_days_field is not None:
+            target = by_key.get(f.every_days_field)
+            if target is None:
+                raise ValueError(
+                    f"field {f.key!r}: every_days_field references unknown "
+                    f"field {f.every_days_field!r}"
+                )
+            if target.type is not FieldType.integer:
+                raise ValueError(
+                    f"field {f.key!r}: every_days_field must name an integer "
+                    f"field (got {target.type.value})"
+                )
+            if target.computed is not None:
+                # the manage page writes intervals into the target; a computed
+                # column is read-only and apply_computed would silently revert
+                raise ValueError(
+                    f"field {f.key!r}: every_days_field target "
+                    f"{f.every_days_field!r} is computed (read-only)"
+                )
         if f.computed is not None:
             from .compute import field_refs
             for ref in field_refs(f.computed):

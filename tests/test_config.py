@@ -240,3 +240,46 @@ def test_every_days_when_scopes_cadence():
                            "every_days_when": {"field": "nope", "in": ["Z"]}})
     with pytest.raises(Exception, match="unknown field"):
         make_config(bad2)
+
+
+def test_every_days_field_per_item_cadence():
+    raw = _raw()
+    raw["fields"].append({"key": "cond_every", "label": "Condition every",
+                          "type": "integer"})
+    raw["fields"].append({"key": "last_cond2", "label": "Last Cond",
+                          "type": "date", "every_days_field": "cond_every"})
+    config = make_config(raw)
+    f = next(f for f in config.fields if f.key == "last_cond2")
+    assert f.every_days_field == "cond_every" and f.every_days is None
+
+    # both fixed and per-item is ambiguous -> rejected
+    bad = _raw()
+    bad["fields"].append({"key": "ce", "label": "CE", "type": "integer"})
+    bad["fields"].append({"key": "lc", "label": "LC", "type": "date",
+                          "every_days": 30, "every_days_field": "ce"})
+    with pytest.raises(Exception, match="not both"):
+        make_config(bad)
+
+    # target must be an integer field
+    bad2 = _raw()
+    bad2["fields"].append({"key": "lc2", "label": "LC2", "type": "date",
+                           "every_days_field": "name"})
+    with pytest.raises(Exception, match="integer"):
+        make_config(bad2)
+
+    # unknown target
+    bad3 = _raw()
+    bad3["fields"].append({"key": "lc3", "label": "LC3", "type": "date",
+                           "every_days_field": "nope"})
+    with pytest.raises(Exception, match="unknown"):
+        make_config(bad3)
+
+
+def test_every_days_field_rejects_computed_target():
+    raw = _raw()
+    raw["fields"].append({"key": "derived_every", "label": "Derived Every",
+                          "type": "integer", "computed": "count * 2"})
+    raw["fields"].append({"key": "last_derived", "label": "Last Derived",
+                          "type": "date", "every_days_field": "derived_every"})
+    with pytest.raises(Exception, match="computed"):
+        make_config(raw)

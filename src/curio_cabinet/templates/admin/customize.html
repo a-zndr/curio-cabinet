@@ -130,6 +130,13 @@
             {% if f.type.value == 'date' %}
               <label class="chk" title="Blank or older dates appear on the To-Dos list">Remind every
                 <input type="number" name="everydays__{{ k }}" value="{{ f.every_days or '' }}" min="1" class="cfg-days"> days</label>
+              <label class="chk" title="Per-item schedule: each item opts in with its own interval, stored in this field. Overrides the fixed number.">or per-item from
+                <select name="ewsrc__{{ k }}">
+                  <option value="">—</option>
+                  {% for inf in registry.fields if inf.type.value == 'integer' and not inf.computed %}
+                    <option value="{{ inf.key }}" {{ 'selected' if f.every_days_field == inf.key }}>{{ inf.label }}</option>
+                  {% endfor %}
+                </select></label>
               <label class="chk" title="Leave blank to remind for every item; or scope to a type">only when
                 <select name="ewfield__{{ k }}">
                   <option value="">any item</option>
@@ -225,6 +232,22 @@
 
 {# ---- Add field ---- #}
 {% if tab == 'add' %}
+<section class="form-group">
+  <h2>Add a maintenance flag</h2>
+  <p class="hint">Creates a pair of fields — “Last X” (date) and “X every (days)” —
+  so each item can opt into the X schedule with its own interval. Opt items in
+  from To-Dos → Manage schedule, or on each item's edit form.</p>
+  <details class="cfg-add" open>
+    <summary class="btn btn-sm">New maintenance flag</summary>
+    <form method="post" action="{{ url_for('admin.customize_add_maintenance') }}" class="form-grid">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="tab" value="add">
+      <div class="form-field"><label>Name</label><input name="label" placeholder="Conditioning" required></div>
+      <div><button class="btn btn-primary" type="submit">Add flag</button></div>
+    </form>
+  </details>
+</section>
+
 <section class="form-group">
   <h2>Add a field</h2>
   <p class="hint">Adds a new column to your collection (a safe, additive change — a backup is taken first).</p>

@@ -226,13 +226,23 @@ def _maintenance_schedule(rows) -> list[dict]:
     title = reg.collection.title_field
     today = datetime.date.today()
     groups = []
-    for f in (f for f in reg.fields if f.every_days is not None):
+    for f in (f for f in reg.fields
+              if f.every_days is not None or f.every_days_field is not None):
+        per_item = f.every_days_field is not None
         entries = []
         for row in rows:
             # a cadence can be scoped to matching items only (e.g. condition
             # only the whips): items outside the condition aren't on this schedule
             if f.every_days_when is not None and not f.every_days_when.matches(dict(row)):
                 continue
+            if per_item:
+                # per-item opt-in: the interval lives on the item; blank/0
+                # means this item isn't on the schedule at all
+                cadence = row[f.every_days_field]
+                if not isinstance(cadence, int) or cadence < 1:
+                    continue
+            else:
+                cadence = f.every_days
             v = row[f.key]
             last = due = None
             if v:
@@ -240,7 +250,7 @@ def _maintenance_schedule(rows) -> list[dict]:
                     last = datetime.date.fromisoformat(str(v)[:10])
                     # OverflowError: a near-MAXYEAR date (e.g. a 9999 typo)
                     # pushed past date.max — treat it as unscheduled, don't 500
-                    due = last + datetime.timedelta(days=f.every_days)
+                    due = last + datetime.timedelta(days=cadence)
                 except (ValueError, OverflowError):
                     last = due = None
             if due is None:
@@ -255,13 +265,13 @@ def _maintenance_schedule(rows) -> list[dict]:
                     status = "ok"
                 rank = days_until
             entries.append({
-                "id": row["id"], "title": row[title],
+                "id": row["id"], "title": row[title], "every": cadence,
                 "last": last.isoformat() if last else None,
                 "due": due.isoformat() if due else None,
                 "days_until": days_until, "status": status, "rank": rank,
             })
         entries.sort(key=lambda e: e["rank"])
-        groups.append({"field": f, "entries": entries})
+        groups.append({"field": f, "entries": entries, "per_item": per_item})
     return groups
 
 
@@ -463,6 +473,105 @@ def _bucket_model(schedule) -> list[dict]:
     ]
 
 
+_MAX_INTERVAL_DAYS = 36500  # 100 years; also keeps ints inside SQLite's 64 bits
+
+
+def _parse_interval(raw: str) -> int | None:
+    """A schedule interval from a form: positive int up to the cap, else None."""
+    raw = raw.strip()
+    if raw.isdecimal() and 0 < len(raw) <= 5 and 0 < int(raw) <= _MAX_INTERVAL_DAYS:
+        return int(raw)
+    return None
+
+
+def _maintenance_field_or_404(key: str):
+    f = g.registry.by_key.get(key)
+    if f is None or f.every_days_field is None:
+        abort(404)
+    return f
+
+
+@bp.get("/maintenance/<field_key>")
+def maintenance_manage(field_key: str):
+    """Opt items in/out of a per-item maintenance schedule and set each
+    item's interval — with bulk set/clear for multi-select."""
+    f = _maintenance_field_or_404(field_key)
+    reg = g.registry
+    title = reg.collection.title_field
+    rows = g.db.execute(f'SELECT * FROM "{reg.table}" ORDER BY "id"').fetchall()
+    items = []
+    for row in rows:
+        if f.every_days_when is not None and not f.every_days_when.matches(dict(row)):
+            continue
+        cadence = row[f.every_days_field]
+        items.append({
+            "id": row["id"], "title": row[title],
+            "every": cadence if isinstance(cadence, int) and cadence > 0 else None,
+            "last": row[f.key],
+        })
+    return render_template("admin/maintenance.html", field=f, items=items)
+
+
+@bp.post("/maintenance/<field_key>/schedule")
+def maintenance_schedule_save(field_key: str):
+    f = _maintenance_field_or_404(field_key)
+    reg = g.registry
+    col = reg.quoted(f.every_days_field)
+    action = request.form.get("action", "save")
+    updates: dict[str, int | None] = {}
+
+    if action in ("bulk", "clear"):
+        ids = request.form.getlist("sel")
+        if not ids:
+            flash("Select at least one item first.", "error")
+            return redirect(url_for("admin.maintenance_manage", field_key=field_key))
+        if action == "bulk":
+            days = _parse_interval(request.form.get("bulk_days", ""))
+            if days is None:
+                flash("Enter how many days between rounds (1–36500).", "error")
+                return redirect(url_for("admin.maintenance_manage", field_key=field_key))
+            updates = {i: days for i in ids}
+        else:
+            updates = {i: None for i in ids}
+    else:  # save every per-item input; blank or 0 opts the item out
+        bad: list[str] = []
+        for form_key, raw_val in request.form.items():
+            if not form_key.startswith("ev__"):
+                continue
+            item_id, raw_val = form_key[len("ev__"):], raw_val.strip()
+            if raw_val in ("", "0"):
+                updates[item_id] = None  # deliberate opt-out
+                continue
+            days = _parse_interval(raw_val)
+            if days is None:
+                # invalid ≠ opt-out: keep the stored interval, say so
+                bad.append(item_id)
+                continue
+            updates[item_id] = days
+        if bad:
+            flash(
+                f"Kept the old interval on {', '.join(sorted(bad)[:5])} — "
+                "intervals must be 1–36500 days.", "error",
+            )
+
+    changed = 0
+    for item_id, value in updates.items():
+        cur = g.db.execute(
+            f'SELECT {col} AS v FROM "{reg.table}" WHERE "id" = ?', (item_id,)
+        ).fetchone()
+        if cur is None or cur["v"] == value:
+            continue
+        g.db.execute(
+            f'UPDATE "{reg.table}" SET {col} = ?, "updated_at" = ? WHERE "id" = ?',
+            [value, utcnow(), item_id],
+        )
+        changed += 1
+    g.db.commit()
+    flash(f"Schedule updated on {changed} item(s)." if changed
+          else "No schedule changes.")
+    return redirect(url_for("admin.maintenance_manage", field_key=field_key))
+
+
 @bp.post("/maintenance/done")
 def maintenance_done():
     """Mark a maintenance date field as done (a chosen date) on one or more
@@ -471,7 +580,7 @@ def maintenance_done():
 
     reg = g.registry
     field = reg.by_key.get(request.form.get("field", ""))
-    if field is None or field.every_days is None:
+    if field is None or (field.every_days is None and field.every_days_field is None):
         abort(400)
     ids = request.form.getlist("item_ids")
     date_raw = request.form.get("done_date", "").strip()
@@ -1020,9 +1129,19 @@ def _update_field_views(f: dict, key: str) -> None:
         f.pop("must_have", None)
     if ftype == "date":
         days = request.form.get(f"everydays__{key}", "").strip()
-        if days.isdecimal() and int(days) > 0:
+        src = request.form.get(f"ewsrc__{key}", "").strip()
+        if src:
+            # per-item schedule: each item's interval lives in `src`
+            f["every_days_field"] = src
+            f.pop("every_days", None)
+        elif days.isdecimal() and int(days) > 0:
             f["every_days"] = int(days)
-            # optional: scope the cadence to items matching a condition
+            f.pop("every_days_field", None)
+        else:
+            f.pop("every_days", None)
+            f.pop("every_days_field", None)
+        if "every_days" in f or "every_days_field" in f:
+            # optional: scope the schedule to items matching a condition
             cond_field = request.form.get(f"ewfield__{key}", "").strip()
             cond_vals = [
                 v.strip() for v in
@@ -1033,7 +1152,6 @@ def _update_field_views(f: dict, key: str) -> None:
             else:
                 f.pop("every_days_when", None)
         else:
-            f.pop("every_days", None)
             f.pop("every_days_when", None)
     if ftype in ("text", "longtext", "tags"):
         f["searchable"] = f"search__{key}" in request.form
@@ -1129,6 +1247,38 @@ def customize_add_field():
     if gp is not None:
         gp.setdefault("fields", []).append(key)
     return _apply(raw, f"Added field “{label}”")
+
+
+@bp.post("/customize/maintenance/add")
+def customize_add_maintenance():
+    """Create a maintenance flag: a "Last X" date field paired with an
+    "X every (days)" integer that holds each item's opt-in interval."""
+    import re as _re
+
+    raw = _raw()
+    label = request.form.get("label", "").strip()
+    slug = _re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")
+    if not label or not slug or not slug[0].isalpha():
+        flash("A maintenance flag needs a name (starting with a letter).", "error")
+        return redirect(url_for("admin.customize", tab="add"))
+    int_key, date_key = f"{slug}_every", f"last_{slug}"
+    existing = {f.get("key") for f in raw.get("fields", [])}
+    if int_key in existing or date_key in existing:
+        flash(f"Fields for “{label}” already exist.", "error")
+        return redirect(url_for("admin.customize", tab="add"))
+    raw.setdefault("fields", []).extend([
+        {"key": int_key, "label": f"{label} every", "type": "integer",
+         "unit": {"label": "days"}},
+        {"key": date_key, "label": f"Last {label}", "type": "date",
+         "every_days_field": int_key},
+    ])
+    groups = raw.setdefault("groups", [])
+    gp = next((x for x in groups if x.get("key") == "maintenance"), None)
+    if gp is None:
+        gp = {"key": "maintenance", "label": "Maintenance", "fields": []}
+        groups.append(gp)
+    gp.setdefault("fields", []).extend([int_key, date_key])
+    return _apply(raw, f"Added maintenance flag “{label}”")
 
 
 @bp.post("/customize/presets/add")

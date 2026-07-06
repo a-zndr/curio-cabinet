@@ -51,9 +51,18 @@ Each entry under `fields:`:
                            # whose date is blank or older than this many
                            # days appear on the "To finish" list
                            # (e.g. last_driven: drive every car every 60d)
-  every_days_when:         # optional: scope the cadence to matching items
+  every_days_field: conditioning_every
+                           # date fields only, instead of every_days: per-item
+                           # opt-in schedules. Each item's interval lives in
+                           # the named integer field; blank = that item isn't
+                           # on the schedule. Manage in bulk from To-Dos →
+                           # Manage schedule. (Customize → Add Field has an
+                           # "Add a maintenance flag" shortcut that creates
+                           # the date+integer pair wired together.)
+  every_days_when:         # optional: scope the schedule to matching items
     field: type            # (e.g. condition only the whips, not everything).
     in: [Whip, Snake Whip] # same eq/in shape as a group's `when`.
+                           # Works with every_days or every_days_field.
   computed: "weight / (length / 100)"
                            # number/integer only: derive this field from other
                            # numeric fields with + - * / and parentheses. It
